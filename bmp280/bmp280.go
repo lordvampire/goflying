@@ -24,6 +24,7 @@ const (
 	ChipID1 = 0x56
 	ChipID2 = 0x57
 	ChipID3 = 0x58
+	ChipID4 = 0x60
 	// Power Mode Definitions
 	SleepMode     = 0x00
 	ForcedMode    = 0x01
@@ -135,7 +136,7 @@ func NewBMP280(i2cbus *embd.I2CBus, address, powerMode, standby, filter, tempRes
 			err = fmt.Errorf("BMP280: couldn't find chip at address %x: %s", address, errv)
 			continue
 		}
-		if v[0] == ChipID1 || v[0] == ChipID2 || v[0] == ChipID3 {
+		if v[0] == ChipID1 || v[0] == ChipID2 || v[0] == ChipID3 || v[0] == ChipID4 {
 			err = nil
 			break
 		}
