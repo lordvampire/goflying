@@ -1,4 +1,4 @@
-module github.com/b3nn0/goflying
+module github.com/stratux/goflying
 
 go 1.16
 
