@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/b3nn0/goflying/ahrs"
-	"github.com/b3nn0/goflying/icm20948"
+	"github.com/stratux/goflying/ahrs"
+	"github.com/stratux/goflying/icm20948"
 	"github.com/kidoman/embd"
 )
 

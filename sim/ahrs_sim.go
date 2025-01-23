@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/b3nn0/goflying/ahrs"
+	"github.com/stratux/goflying/ahrs"
 	"encoding/json"
 )
 

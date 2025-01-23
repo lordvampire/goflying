@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/b3nn0/goflying/bmp280"
+	"github.com/stratux/goflying/bmp280"
 	"fmt"
 	"github.com/kidoman/embd"
 	"time"

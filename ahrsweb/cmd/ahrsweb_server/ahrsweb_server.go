@@ -7,7 +7,7 @@ This book is highly recommended!
 package main
 
 import (
-	"github.com/b3nn0/goflying/ahrsweb"
+	"github.com/stratux/goflying/ahrsweb"
 	"flag"
 	"fmt"
 	"html/template"
