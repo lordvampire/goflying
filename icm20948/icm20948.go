@@ -871,9 +871,9 @@ func (mpu *ICM20948) ReadMagCalibration() error {
 		return errors.New("ReadMagCalibration error reading chip")
 	}
 
-	mpu.mcal1 = float64(int16(mcal1)+128) / 256 * scaleMag
-	mpu.mcal2 = float64(int16(mcal2)+128) / 256 * scaleMag
-	mpu.mcal3 = float64(int16(mcal3)+128) / 256 * scaleMag
+	mpu.mcal1 = float64(int16(mcal1)+128) / 256 * scaleMagAK8963
+	mpu.mcal2 = float64(int16(mcal2)+128) / 256 * scaleMagAK8963
+	mpu.mcal3 = float64(int16(mcal3)+128) / 256 * scaleMagAK8963
 
 	// Clean up from getting sensitivity data from AK8963
 	// Fuse AK8963 ROM access
