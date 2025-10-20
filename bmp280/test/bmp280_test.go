@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stratux/goflying/bmp280"
+	"github.com/b3nn0/goflying/bmp280"
 	"github.com/kidoman/embd"
 )
 
