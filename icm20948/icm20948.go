@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	bufSize         = 250 // Size of buffer storing instantaneous sensor values
-	scaleMag        = 9830.0 / 65536
+	bufSize          = 250                // Size of buffer storing instantaneous sensor values
+	scaleMagAK8963   = 9830.0 / 65536
+	scaleMagAK09916  = 4912.0 / 32752     // AK09916: ±4912 µT range, 16-bit
 	calDataLocation = "/etc/icm20948cal.json"
 )
 
@@ -123,7 +124,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	}
 
 	mpu.sampleRate = sampleRate
-	mpu.enableMag = false //FIXME: enableMag. Always disabling magnetometer now.
+	mpu.enableMag = enableMag // Enable magnetometer based on parameter
 
 	mpu.i2cbus = *i2cbus
 
@@ -185,66 +186,91 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 	// Turn off interrupts. Not necessary - default off.
 
-	//FIXME. Mag reading not set up.
-	// Set up magnetometer
-	/*
-		if mpu.enableMag {
-			if err := mpu.ReadMagCalibration(); err != nil {
-				return nil, errors.New("Error reading calibration from magnetometer")
-			}
-
-			// Set up AK8963 master mode, master clock and ES bit
-			if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x40); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Slave 0 reads from AK8963
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK8963_I2C_ADDR); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Compass reads start at this register
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK8963_ST1); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Enable 8-byte reads on slave 0
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|8); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Slave 1 can change AK8963 measurement mode
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV1_ADDR, AK8963_I2C_ADDR); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV1_REG, AK8963_CNTL1); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Enable 1-byte reads on slave 1
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV1_CTRL, BIT_SLAVE_EN|1); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Set slave 1 data
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV1_DO, AKM_SINGLE_MEASUREMENT); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-			// Triggers slave 0 and 1 actions at each sample
-			if err := mpu.i2cWrite(ICMREG_I2C_MST_DELAY_CTRL, 0x03); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-
-			// Set AK8963 sample rate to same as gyro/accel sample rate, up to max
-			var ak8963Rate byte
-			if mpu.sampleRate < AK8963_MAX_SAMPLE_RATE {
-				ak8963Rate = 0
-			} else {
-				ak8963Rate = byte(mpu.sampleRate/AK8963_MAX_SAMPLE_RATE - 1)
-			}
-
-			// Not so sure of this one--I2C Slave 4??!
-			if err := mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, ak8963Rate); err != nil {
-				return nil, errors.New("Error setting up AK8963")
-			}
-
-			time.Sleep(100 * time.Millisecond) // Make sure mag is ready
+	// Set up magnetometer (AK09916)
+	if mpu.enableMag {
+		// Switch to register bank 0
+		if err := mpu.setRegBank(0); err != nil {
+			return nil, errors.New("Error setting register bank")
 		}
-	*/
+
+		// Enable I2C master mode
+		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_AUX_IF_EN); err != nil {
+			return nil, errors.New("Error enabling I2C master mode")
+		}
+		time.Sleep(10 * time.Millisecond)
+
+		// Switch to register bank 3 for I2C master configuration
+		if err := mpu.setRegBank(3); err != nil {
+			return nil, errors.New("Error setting register bank 3")
+		}
+
+		// Set I2C master clock to 400 kHz
+		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07); err != nil {
+			return nil, errors.New("Error setting up I2C master clock")
+		}
+
+		// Configure I2C Slave 0 to read from AK09916
+		// Set slave 0 address to AK09916 with read bit
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR); err != nil {
+			return nil, errors.New("Error setting up AK09916 slave address")
+		}
+
+		// Start reading from ST1 register
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_ST1); err != nil {
+			return nil, errors.New("Error setting up AK09916 read register")
+		}
+
+		// Enable 9-byte reads on slave 0 (ST1 + 6 bytes mag data + ST2 + 1 reserved)
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|9); err != nil {
+			return nil, errors.New("Error setting up AK09916 read control")
+		}
+
+		// Configure I2C Slave 1 to write to AK09916 control register
+		// Set slave 1 address to AK09916 (write mode)
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_ADDR, AK09916_I2C_ADDR); err != nil {
+			return nil, errors.New("Error setting up AK09916 slave 1 address")
+		}
+
+		// Write to CNTL2 register
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_REG, AK09916_CNTL2); err != nil {
+			return nil, errors.New("Error setting up AK09916 control register")
+		}
+
+		// Enable 1-byte writes on slave 1
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_CTRL, BIT_SLAVE_EN|1); err != nil {
+			return nil, errors.New("Error enabling AK09916 slave 1")
+		}
+
+		// Set continuous measurement mode based on sample rate
+		var magMode byte
+		if mpu.sampleRate >= 100 {
+			magMode = AK09916_MODE_CONT4 // 100 Hz
+		} else if mpu.sampleRate >= 50 {
+			magMode = AK09916_MODE_CONT3 // 50 Hz
+		} else if mpu.sampleRate >= 20 {
+			magMode = AK09916_MODE_CONT2 // 20 Hz
+		} else {
+			magMode = AK09916_MODE_CONT1 // 10 Hz
+		}
+
+		// Set the measurement mode via slave 1
+		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_DO, magMode); err != nil {
+			return nil, errors.New("Error setting AK09916 measurement mode")
+		}
+
+		// Set magnetometer hardware calibration values (AK09916 doesn't have sensitivity adjustment like AK8963)
+		// Using default scale factor
+		mpu.mpuCalData.M01 = scaleMagAK09916
+		mpu.mpuCalData.M02 = scaleMagAK09916
+		mpu.mpuCalData.M03 = scaleMagAK09916
+
+		// Switch back to register bank 0
+		if err := mpu.setRegBank(0); err != nil {
+			return nil, errors.New("Error setting register bank 0")
+		}
+
+		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
+	}
 	// Set clock source to PLL. Not necessary - default "auto select" (PLL when ready).
 
 	if applyHWOffsets {
@@ -274,7 +300,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 // Communication is via channels.
 func (mpu *ICM20948) readSensors() {
 	var (
-		g1, g2, g3, a1, a2, a3, m1, m2, m3, m4, tmp int16   // Current values
+		g1, g2, g3, a1, a2, a3, m1, m2, m3, tmp int16   // Current values
 		avg1, avg2, avg3, ava1, ava2, ava3, avtmp   float64 // Accumulators for averages
 		avm1, avm2, avm3                            int32
 		n, nm                                       float64
@@ -295,7 +321,9 @@ func (mpu *ICM20948) readSensors() {
 		&tmp: ICMREG_TEMP_OUT_H,
 	}
 	magRegMap := map[*int16]byte{
-		&m1: ICMREG_EXT_SENS_DATA_00, &m2: ICMREG_EXT_SENS_DATA_02, &m3: ICMREG_EXT_SENS_DATA_04, &m4: ICMREG_EXT_SENS_DATA_06,
+		// AK09916 data starts at EXT_SENS_DATA_01 (after ST1 at _00)
+		// HXL at _01, HXH at _02, HYL at _03, HYH at _04, HZL at _05, HZH at _06
+		&m1: ICMREG_EXT_SENS_DATA_01, &m2: ICMREG_EXT_SENS_DATA_03, &m3: ICMREG_EXT_SENS_DATA_05,
 	}
 
 	if mpu.sampleRate > 100 {
@@ -416,38 +444,41 @@ func (mpu *ICM20948) readSensors() {
 			}
 		case tm = <-clockMag.C: // Read magnetometer data:
 			if mpu.enableMag {
-				// Set AK8963 to slave0 for reading
-				if err := mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, AK8963_I2C_ADDR|READ_FLAG); err != nil {
-					log.Printf("ICM20948 Error: couldn't set AK8963 address for reading: %s", err.Error())
-				}
-				//I2C slave 0 register address from where to begin data transfer
-				if err := mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK8963_HXL); err != nil {
-					log.Printf("ICM20948 Error: couldn't set AK8963 read register: %s", err.Error())
-				}
-				//Tell AK8963 that we will read 7 bytes
-				if err := mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, 0x87); err != nil {
-					log.Printf("ICM20948 Error: couldn't communicate with AK8963: %s", err.Error())
+				// Read magnetometer data from external sensor data registers
+				var st1, st2 byte
+
+				// Read ST1 status register
+				st1, magError = mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
+				if magError != nil {
+					log.Println("ICM20948 Warning: error reading magnetometer ST1")
+					continue
 				}
 
-				// Read the actual data
+				// Check if data is ready
+				if (st1 & AK09916_ST1_DRDY) == 0 {
+					continue // Data not ready yet
+				}
+
+				// Read magnetometer data
 				for p, reg := range magRegMap {
 					*p, magError = mpu.i2cRead2(reg)
 					if magError != nil {
-						log.Println("ICM20948 Warning: error reading magnetometer")
+						log.Println("ICM20948 Warning: error reading magnetometer data")
+						continue
 					}
 				}
 
-				// Test validity of magnetometer data
-				if (byte(m1&0xFF)&AKM_DATA_READY) == 0x00 && (byte(m1&0xFF)&AKM_DATA_OVERRUN) != 0x00 {
-					log.Println("ICM20948 mag data not ready or overflow")
-					log.Printf("ICM20948 m1 LSB: %X\n", byte(m1&0xFF))
-					continue // Don't update the accumulated values
+				// Read ST2 status register (at offset +8 from ST1)
+				st2, magError = mpu.i2cRead(ICMREG_EXT_SENS_DATA_00 + 8)
+				if magError != nil {
+					log.Println("ICM20948 Warning: error reading magnetometer ST2")
+					continue
 				}
 
-				if (byte((m4>>8)&0xFF) & AKM_OVERFLOW) != 0x00 {
+				// Check for data overflow
+				if (st2 & AK09916_ST2_HOFL) != 0 {
 					log.Println("ICM20948 mag data overflow")
-					log.Printf("ICM20948 m4 MSB: %X\n", byte((m1>>8)&0xFF))
-					continue // Don't update the accumulated values
+					continue
 				}
 
 				// Update values and increment count of magnetometer readings

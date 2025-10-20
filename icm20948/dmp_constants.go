@@ -166,6 +166,39 @@ const (
 	AK8963_ASAX = 0x10
 	AK8963_ASAY = 0x11
 	AK8963_ASAZ = 0x12
+
+	/* ---- AK09916 Reg In ICM20948 --------------------------------------------- */
+	AK09916_I2C_ADDR        = 0x0C
+	AK09916_Device_ID       = 0x09
+	AK09916_MAX_SAMPLE_RATE = 100 // 100 Hz
+	// Read-only Reg
+	AK09916_WIA1 = 0x00 // Company ID, should be 0x48
+	AK09916_WIA2 = 0x01 // Device ID, should be 0x09
+	AK09916_RSV1 = 0x02 // Reserved
+	AK09916_RSV2 = 0x03 // Reserved
+	AK09916_ST1  = 0x10 // Status 1
+	AK09916_HXL  = 0x11 // X-axis data low byte
+	AK09916_HXH  = 0x12 // X-axis data high byte
+	AK09916_HYL  = 0x13 // Y-axis data low byte
+	AK09916_HYH  = 0x14 // Y-axis data high byte
+	AK09916_HZL  = 0x15 // Z-axis data low byte
+	AK09916_HZH  = 0x16 // Z-axis data high byte
+	AK09916_ST2  = 0x18 // Status 2
+	// Write/Read Reg
+	AK09916_CNTL2 = 0x31 // Control settings
+	AK09916_CNTL3 = 0x32 // Control settings
+	// Modes for CNTL2
+	AK09916_MODE_POWER_DOWN = 0x00
+	AK09916_MODE_SINGLE     = 0x01 // Single measurement
+	AK09916_MODE_CONT1      = 0x02 // Continuous measurement 1 (10Hz)
+	AK09916_MODE_CONT2      = 0x04 // Continuous measurement 2 (20Hz)
+	AK09916_MODE_CONT3      = 0x06 // Continuous measurement 3 (50Hz)
+	AK09916_MODE_CONT4      = 0x08 // Continuous measurement 4 (100Hz)
+	AK09916_MODE_SELF_TEST  = 0x10 // Self-test
+	// Status register bits
+	AK09916_ST1_DRDY = 0x01 // Data ready
+	AK09916_ST1_DOR  = 0x02 // Data overrun
+	AK09916_ST2_HOFL = 0x08 // Magnetic sensor overflow
 	// Configuration bits from mpu9250.
 	BIT_SLEEP                  = 0x40
 	BIT_H_RESET                = 0x80
