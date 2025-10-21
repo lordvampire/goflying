@@ -11,6 +11,36 @@ Standalone Test-Programm für den ICM20948 Magnetometer - **viel schneller** als
 
 ## Schnellstart (EMPFOHLEN)
 
+### Methode 1: Direkt auf dem Raspberry Pi (AM EINFACHSTEN)
+
+**Kopiere das Script zum Pi und führe es aus:**
+
+```bash
+# Auf deinem PC:
+cd /home/faruktuefekli/GitHub/icm20948/goflying-b3nn0
+scp test-direct-on-pi.sh root@<pi-ip>:/root/
+
+# Auf dem Raspberry Pi:
+ssh root@<pi-ip>
+sudo /root/test-direct-on-pi.sh
+```
+
+**Beispiel:**
+```bash
+scp test-direct-on-pi.sh root@192.168.1.100:/root/
+ssh root@192.168.1.100
+sudo /root/test-direct-on-pi.sh
+```
+
+Das Script macht automatisch:
+1. ✓ Findet Go Installation auf dem Pi (`/root/go/bin/go`)
+2. ✓ Holt neuesten Code von GitHub
+3. ✓ Kompiliert direkt auf dem Pi
+4. ✓ Führt Test sofort aus
+5. ✓ Zeigt alle Debug-Logs und Magnetometer-Daten
+
+### Methode 2: Lokal kompilieren und deployen
+
 **Ein Befehl - kompilieren, deployen UND ausführen:**
 
 ```bash
@@ -28,15 +58,6 @@ Das Script:
 2. ✓ Deployed automatisch per scp
 3. ✓ Führt Test sofort aus
 4. ✓ Zeigt Magnetometer-Daten live
-
-**Nur kompilieren und deployen (ohne ausführen):**
-
-```bash
-./build-test.sh 192.168.1.100
-
-# Dann manuell auf dem Pi:
-ssh root@192.168.1.100 'sudo /root/test-magnetometer'
-```
 
 ## Erwartete Ausgabe
 
