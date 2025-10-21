@@ -226,21 +226,8 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			return nil, errors.New("Error setting up AK09916 read control")
 		}
 
-		// Configure I2C Slave 1 to write to AK09916 control register
-		// Set slave 1 address to AK09916 (write mode)
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_ADDR, AK09916_I2C_ADDR); err != nil {
-			return nil, errors.New("Error setting up AK09916 slave 1 address")
-		}
-
-		// Write to CNTL2 register
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_REG, AK09916_CNTL2); err != nil {
-			return nil, errors.New("Error setting up AK09916 control register")
-		}
-
-		// Enable 1-byte writes on slave 1
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_CTRL, BIT_SLAVE_EN|1); err != nil {
-			return nil, errors.New("Error enabling AK09916 slave 1")
-		}
+		// IMPORTANT: We DON'T use Slave 1 for continuous writes
+		// Instead, we'll use direct register writes after enabling I2C master
 
 		// Set continuous measurement mode based on sample rate
 		var magMode byte
@@ -254,12 +241,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			magMode = AK09916_MODE_CONT1 // 10 Hz
 		}
 
-		log.Printf("ICM20948: Setting AK09916 to continuous mode 0x%02X (sample rate: %d Hz)\n", magMode, mpu.sampleRate)
-
-		// Set the measurement mode via slave 1
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_DO, magMode); err != nil {
-			return nil, errors.New("Error setting AK09916 measurement mode")
-		}
+		log.Printf("ICM20948: Will set AK09916 to continuous mode 0x%02X (sample rate: %d Hz)\n", magMode, mpu.sampleRate)
 
 		// Set magnetometer hardware calibration values (AK09916 doesn't have sensitivity adjustment like AK8963)
 		// Using default scale factor
@@ -306,8 +288,18 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 				log.Printf("ICM20948 ERROR: AK09916 not responding correctly!\n")
 			}
 
-			// Read back CNTL2 to verify mode was set
+			// NOW write to AK09916 CNTL2 using Slave 4 (single transaction)
+			log.Printf("ICM20948: Writing 0x%02X to AK09916 CNTL2 via Slave 4...\n", magMode)
 			mpu.setRegBank(3)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode (no BIT_I2C_READ)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL2)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_DO, magMode)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN) // Start single transaction
+
+			// Wait for transaction to complete (check I2C_MST_STATUS or just wait)
+			time.Sleep(20 * time.Millisecond)
+
+			// Read back CNTL2 to verify mode was set
 			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
 			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_CNTL2)
 			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|1) // Read 1 byte
@@ -316,7 +308,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 			mpu.setRegBank(0)
 			cntl2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
-			log.Printf("ICM20948: AK09916 CNTL2=0x%02X (wrote 0x%02X)\n", cntl2, magMode)
+			log.Printf("ICM20948: AK09916 CNTL2 readback=0x%02X (expected 0x%02X)\n", cntl2, magMode)
 
 			// Reconfigure slave 0 back to reading ST1+mag data
 			mpu.setRegBank(3)

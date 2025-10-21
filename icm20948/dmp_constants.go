@@ -139,7 +139,11 @@ const (
 	ICMREG_I2C_SLV1_ADDR = 0x07
 	ICMREG_I2C_SLV1_REG  = 0x08
 	ICMREG_I2C_SLV1_CTRL = 0x09
-	ICMREG_I2C_SLV4_CTRL = 0x15
+	ICMREG_I2C_SLV4_ADDR = 0x13 // Bank 3
+	ICMREG_I2C_SLV4_REG  = 0x14 // Bank 3
+	ICMREG_I2C_SLV4_CTRL = 0x15 // Bank 3
+	ICMREG_I2C_SLV4_DO   = 0x16 // Bank 3
+	ICMREG_I2C_SLV4_DI   = 0x17 // Bank 3
 
 	/* ---- AK8963 Reg In MPU9250 ----------------------------------------------- */
 	AK8963_I2C_ADDR        = 0x0C //0x18
