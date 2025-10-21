@@ -145,6 +145,16 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		return nil, errors.New("Error waking ICM20948")
 	}
 
+	// CRITICAL: Enable gyro and accel (PWR_MGMT_2 = 0x00)
+	// This is REQUIRED for I2C Master to function!
+	// The I2C Master needs the gyro/accel clock to operate.
+	// Without this, I2C Master transactions will not execute (SLV4_DONE never sets).
+	if err := mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00); err != nil {
+		return nil, errors.New("Error enabling gyro/accel in PWR_MGMT_2")
+	}
+	time.Sleep(50 * time.Millisecond) // Give sensors time to start
+	log.Println("ICM20948: Gyro and Accel enabled (PWR_MGMT_2=0x00)")
+
 	// Note: inv_mpu.c sets some registers here to allocate 1kB to the FIFO buffer and 3kB to the DMP.
 	// It doesn't seem to be supported in the 1.6 version of the register map and we're not using FIFO anyway,
 	// so we skip this.
