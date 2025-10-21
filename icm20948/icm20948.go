@@ -236,11 +236,12 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		}
 		log.Println("ICM20948: I2C master ODR set to 200 Hz")
 
-		// Set I2C master clock to 400 kHz
-		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07); err != nil {
+		// Set I2C master clock to 400 kHz with STOP between reads
+		// BIT_I2C_MST_P_NSR: Issues STOP condition between reads (critical for AK09916)
+		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07|BIT_I2C_MST_P_NSR); err != nil {
 			return nil, errors.New("Error setting up I2C master clock")
 		}
-		log.Println("ICM20948: I2C master clock set to 400 kHz")
+		log.Println("ICM20948: I2C master clock set to 400 kHz with STOP between reads")
 
 		// Configure I2C Slave 0 to read from AK09916
 		// Set slave 0 address to AK09916 with read bit
