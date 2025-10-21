@@ -24,7 +24,7 @@ const (
 	ICMREG_LP_ACCEL_ODR       = 0x1E
 	ICMREG_MOT_THR            = 0x1F
 	ICMREG_FIFO_EN            = 0x23
-	ICMREG_INT_PIN_CFG        = 0x37
+	ICMREG_INT_PIN_CFG        = 0x0F // Bank 0 (was 0x37 for MPU-9250, WRONG for ICM-20948!)
 	ICMREG_INT_ENABLE         = 0x38
 	ICMREG_ACCEL_XOUT_H       = 0x2D //
 	ICMREG_ACCEL_XOUT_L       = 0x2E //

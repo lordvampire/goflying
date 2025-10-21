@@ -190,7 +190,20 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing AK09916 magnetometer...")
 
-		// FIRST: Ensure I2C Master is NOT in duty-cycle mode
+		// CRITICAL: Disable I2C bypass mode FIRST (before any I2C master config)
+		// This is essential - bypass mode routes aux I2C to external pins, preventing I2C master from working
+		if err := mpu.setRegBank(0); err != nil {
+			return nil, errors.New("Error setting register bank 0 for bypass disable")
+		}
+
+		// Write 0x00 to INT_PIN_CFG to ensure bypass mode is OFF
+		if err := mpu.i2cWrite(ICMREG_INT_PIN_CFG, 0x00); err != nil {
+			return nil, errors.New("Error disabling I2C bypass mode")
+		}
+		log.Println("ICM20948: I2C bypass mode explicitly disabled (INT_PIN_CFG=0x00)")
+		time.Sleep(10 * time.Millisecond)
+
+		// SECOND: Ensure I2C Master is NOT in duty-cycle mode
 		if err := mpu.setRegBank(0); err != nil {
 			return nil, errors.New("Error setting register bank 0")
 		}
