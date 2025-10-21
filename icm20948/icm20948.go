@@ -211,6 +211,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07); err != nil {
 			return nil, errors.New("Error setting up I2C master clock")
 		}
+		log.Println("ICM20948: I2C master clock set to 400 kHz")
 
 		// Configure I2C Slave 0 to read from AK09916
 		// Set slave 0 address to AK09916 with read bit
@@ -276,6 +277,53 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
 
+		// Verify AK09916 is responding by reading WHO_AM_I registers
+		log.Println("ICM20948: Verifying AK09916 communication...")
+
+		// Switch to bank 3 to configure slave 0 for WHO_AM_I read
+		if err := mpu.setRegBank(3); err != nil {
+			log.Printf("ICM20948 Warning: Could not switch to bank 3 for verification: %v\n", err)
+		} else {
+			// Configure slave 0 to read WIA1 and WIA2 (2 bytes)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_WIA1)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|2) // Read 2 bytes
+
+			time.Sleep(10 * time.Millisecond)
+
+			// Switch to bank 0 to read EXT_SENS_DATA
+			mpu.setRegBank(0)
+			wia1, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
+			wia2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_01)
+
+			log.Printf("ICM20948: AK09916 WHO_AM_I: WIA1=0x%02X (expect 0x48), WIA2=0x%02X (expect 0x09)\n", wia1, wia2)
+
+			if wia1 != 0x48 || wia2 != 0x09 {
+				log.Printf("ICM20948 ERROR: AK09916 not responding correctly!\n")
+			}
+
+			// Read back CNTL2 to verify mode was set
+			mpu.setRegBank(3)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_CNTL2)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|1) // Read 1 byte
+
+			time.Sleep(10 * time.Millisecond)
+
+			mpu.setRegBank(0)
+			cntl2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
+			log.Printf("ICM20948: AK09916 CNTL2=0x%02X (wrote 0x%02X)\n", cntl2, magMode)
+
+			// Reconfigure slave 0 back to reading ST1+mag data
+			mpu.setRegBank(3)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_ST1)
+			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|9)
+			mpu.setRegBank(0)
+
+			log.Println("ICM20948: Slave 0 reconfigured for continuous ST1+mag data reading")
+		}
+
 		log.Println("ICM20948: AK09916 magnetometer initialization complete")
 	}
 	// Set clock source to PLL. Not necessary - default "auto select" (PLL when ready).
@@ -311,6 +359,7 @@ func (mpu *ICM20948) readSensors() {
 		avg1, avg2, avg3, ava1, ava2, ava3, avtmp   float64 // Accumulators for averages
 		avm1, avm2, avm3                            int32
 		n, nm                                       float64
+		notReadyCount                               int // Counter for magnetometer not ready
 		gaError, magError                           error
 		t0, t, t0m, tm                              time.Time
 		magSampleRate                               int
@@ -463,9 +512,10 @@ func (mpu *ICM20948) readSensors() {
 
 				// Check if data is ready
 				if (st1 & AK09916_ST1_DRDY) == 0 {
-					// Log occasionally when data is not ready
-					if int(nm)%100 == 0 {
-						log.Printf("ICM20948: Magnetometer data not ready (ST1=0x%02X)\n", st1)
+					notReadyCount++
+					// Log first few times and then every 100th time
+					if notReadyCount <= 5 || notReadyCount%100 == 0 {
+						log.Printf("ICM20948: Magnetometer data not ready (count=%d, ST1=0x%02X)\n", notReadyCount, st1)
 					}
 					continue // Data not ready yet
 				}
