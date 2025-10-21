@@ -315,9 +315,17 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 				log.Printf("ICM20948 ERROR: AK09916 not responding correctly!\n")
 			}
 
+			// FIRST: Try soft reset of AK09916 via CNTL3
+			log.Println("ICM20948: Sending soft reset to AK09916 via CNTL3...")
+			mpu.setRegBank(3)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL3) // CNTL3 = 0x32
+			mpu.i2cWrite(ICMREG_I2C_SLV4_DO, 0x01) // SRST bit
+			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)
+			time.Sleep(100 * time.Millisecond) // Wait for reset to complete
+
 			// NOW write to AK09916 CNTL2 using Slave 4 (single transaction)
 			log.Printf("ICM20948: Writing 0x%02X to AK09916 CNTL2 via Slave 4...\n", magMode)
-			mpu.setRegBank(3)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode (no BIT_I2C_READ)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL2)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_DO, magMode)
