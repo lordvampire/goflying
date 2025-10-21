@@ -188,6 +188,8 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 	// Set up magnetometer (AK09916)
 	if mpu.enableMag {
+		log.Println("ICM20948: Initializing AK09916 magnetometer...")
+
 		// Switch to register bank 0
 		if err := mpu.setRegBank(0); err != nil {
 			return nil, errors.New("Error setting register bank")
@@ -197,6 +199,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_AUX_IF_EN); err != nil {
 			return nil, errors.New("Error enabling I2C master mode")
 		}
+		log.Println("ICM20948: I2C master mode enabled")
 		time.Sleep(10 * time.Millisecond)
 
 		// Switch to register bank 3 for I2C master configuration
@@ -253,6 +256,8 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			magMode = AK09916_MODE_CONT1 // 10 Hz
 		}
 
+		log.Printf("ICM20948: Setting AK09916 to continuous mode 0x%02X (sample rate: %d Hz)\n", magMode, mpu.sampleRate)
+
 		// Set the measurement mode via slave 1
 		if err := mpu.i2cWrite(ICMREG_I2C_SLV1_DO, magMode); err != nil {
 			return nil, errors.New("Error setting AK09916 measurement mode")
@@ -270,6 +275,8 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		}
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
+
+		log.Println("ICM20948: AK09916 magnetometer initialization complete")
 	}
 	// Set clock source to PLL. Not necessary - default "auto select" (PLL when ready).
 
@@ -456,6 +463,10 @@ func (mpu *ICM20948) readSensors() {
 
 				// Check if data is ready
 				if (st1 & AK09916_ST1_DRDY) == 0 {
+					// Log occasionally when data is not ready
+					if nm%100 == 0 {
+						log.Printf("ICM20948: Magnetometer data not ready (ST1=0x%02X)\n", st1)
+					}
 					continue // Data not ready yet
 				}
 
@@ -486,6 +497,11 @@ func (mpu *ICM20948) readSensors() {
 				avm2 += int32(m2)
 				avm3 += int32(m3)
 				nm++
+
+				// Log first successful read and every 100th read
+				if nm == 1 || nm%100 == 0 {
+					log.Printf("ICM20948: Magnetometer read #%d: M1=%d, M2=%d, M3=%d (ST1=0x%02X, ST2=0x%02X)\n", nm, m1, m2, m3, st1, st2)
+				}
 			}
 		case cC <- curdata: // Send the latest values
 		case cAvg <- makeAvgMPUData(): // Send the averages
