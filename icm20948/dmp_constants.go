@@ -72,6 +72,7 @@ const (
 	ICMREG_SIGNAL_PATH_RESET  = 0x68
 	ICMREG_MOT_DETECT_CTRL    = 0x69
 	ICMREG_USER_CTRL          = 0x6A
+	ICMREG_LP_CONFIG          = 0x05 // Bank 0: Low Power Config
 	ICMREG_PWR_MGMT_1         = 0x06
 	ICMREG_PWR_MGMT_2         = 0x6C
 	ICMREG_BANK_SEL           = 0x7F // New use.

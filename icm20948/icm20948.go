@@ -190,6 +190,25 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing AK09916 magnetometer...")
 
+		// FIRST: Ensure I2C Master is NOT in duty-cycle mode
+		if err := mpu.setRegBank(0); err != nil {
+			return nil, errors.New("Error setting register bank 0")
+		}
+
+		// Read LP_CONFIG and ensure I2C_MST_CYCLE is 0 (continuous, not duty-cycle)
+		lpConfig, err := mpu.i2cRead(ICMREG_LP_CONFIG)
+		if err != nil {
+			log.Printf("ICM20948: Warning: Could not read LP_CONFIG: %v\n", err)
+		} else {
+			log.Printf("ICM20948: LP_CONFIG = 0x%02X\n", lpConfig)
+			// Clear I2C_MST_CYCLE bit (bit 6) to ensure continuous operation
+			if (lpConfig & 0x40) != 0 {
+				lpConfig &= ^byte(0x40)
+				mpu.i2cWrite(ICMREG_LP_CONFIG, lpConfig)
+				log.Println("ICM20948: Disabled I2C_MST_CYCLE (enabled continuous mode)")
+			}
+		}
+
 		// Switch to register bank 3 for I2C master configuration
 		// IMPORTANT: Configure BEFORE enabling!
 		if err := mpu.setRegBank(3); err != nil {
