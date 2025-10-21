@@ -464,7 +464,7 @@ func (mpu *ICM20948) readSensors() {
 				// Check if data is ready
 				if (st1 & AK09916_ST1_DRDY) == 0 {
 					// Log occasionally when data is not ready
-					if nm%100 == 0 {
+					if int(nm)%100 == 0 {
 						log.Printf("ICM20948: Magnetometer data not ready (ST1=0x%02X)\n", st1)
 					}
 					continue // Data not ready yet
@@ -499,8 +499,8 @@ func (mpu *ICM20948) readSensors() {
 				nm++
 
 				// Log first successful read and every 100th read
-				if nm == 1 || nm%100 == 0 {
-					log.Printf("ICM20948: Magnetometer read #%d: M1=%d, M2=%d, M3=%d (ST1=0x%02X, ST2=0x%02X)\n", nm, m1, m2, m3, st1, st2)
+				if nm == 1 || int(nm)%100 == 0 {
+					log.Printf("ICM20948: Magnetometer read #%d: M1=%d, M2=%d, M3=%d (ST1=0x%02X, ST2=0x%02X)\n", int(nm), m1, m2, m3, st1, st2)
 				}
 			}
 		case cC <- curdata: // Send the latest values
