@@ -190,19 +190,8 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing AK09916 magnetometer...")
 
-		// Switch to register bank 0
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank")
-		}
-
-		// Enable I2C master mode
-		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_AUX_IF_EN); err != nil {
-			return nil, errors.New("Error enabling I2C master mode")
-		}
-		log.Println("ICM20948: I2C master mode enabled")
-		time.Sleep(10 * time.Millisecond)
-
 		// Switch to register bank 3 for I2C master configuration
+		// IMPORTANT: Configure BEFORE enabling!
 		if err := mpu.setRegBank(3); err != nil {
 			return nil, errors.New("Error setting register bank 3")
 		}
@@ -282,6 +271,12 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		if err := mpu.setRegBank(0); err != nil {
 			return nil, errors.New("Error setting register bank 0")
 		}
+
+		// NOW enable I2C master mode (after all configuration is done!)
+		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_AUX_IF_EN); err != nil {
+			return nil, errors.New("Error enabling I2C master mode")
+		}
+		log.Println("ICM20948: I2C master mode enabled (after configuration)")
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
 
