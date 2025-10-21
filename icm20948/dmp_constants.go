@@ -223,7 +223,6 @@ const (
 	BITS_DLPF_CFG_MASK         = 0x07
 	BIT_INT_ANYRD_2CLEAR       = 0x10
 	BIT_RAW_RDY_EN             = 0x01
-	BIT_I2C_IF_DIS             = 0x10
 
 	// Misc
 	READ_FLAG                    = 0x80
