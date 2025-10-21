@@ -263,9 +263,36 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
 
+		// Wait longer for I2C master to stabilize
+		time.Sleep(200 * time.Millisecond)
+
 		// Verify AK09916 is responding by reading WHO_AM_I registers
 		log.Println("ICM20948: Verifying AK09916 communication...")
 
+		// Try scanning I2C addresses 0x0C, 0x0D, 0x0E, 0x0F (common mag addresses)
+		log.Println("ICM20948: Scanning for AK09916 on I2C master bus...")
+		if err := mpu.setRegBank(3); err != nil {
+			log.Printf("ICM20948 Warning: Could not switch to bank 3: %v\n", err)
+		} else {
+			for addr := byte(0x0C); addr <= 0x0F; addr++ {
+				// Try to read WHO_AM_I from this address
+				mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|addr)
+				mpu.i2cWrite(ICMREG_I2C_SLV0_REG, 0x00) // WIA1 register
+				mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|2)
+				time.Sleep(20 * time.Millisecond)
+
+				mpu.setRegBank(0)
+				val1, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
+				val2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_01)
+
+				if val1 != 0x00 || val2 != 0x00 {
+					log.Printf("ICM20948: Found device at 0x%02X: 0x%02X 0x%02X\n", addr, val1, val2)
+				}
+				mpu.setRegBank(3)
+			}
+		}
+
+		// Now try the expected address 0x0C
 		// Switch to bank 3 to configure slave 0 for WHO_AM_I read
 		if err := mpu.setRegBank(3); err != nil {
 			log.Printf("ICM20948 Warning: Could not switch to bank 3 for verification: %v\n", err)
