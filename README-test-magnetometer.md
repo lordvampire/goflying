@@ -9,57 +9,33 @@ Standalone Test-Programm für den ICM20948 Magnetometer - **viel schneller** als
 - 🔍 **Detailliert:** Zeigt alle Debug-Logs vom Treiber
 - 🔄 **Live:** Zeigt Sensor-Daten jede Sekunde
 
-## Methode 1: Direkt auf dem Raspberry Pi (EMPFOHLEN)
+## Schnellstart (EMPFOHLEN)
 
-**Ein einziger Befehl - alles automatisch:**
-
-```bash
-curl -sSL https://raw.githubusercontent.com/lordvampire/goflying/stratux_master/test-on-pi.sh | sudo bash
-```
-
-Was passiert:
-1. ✓ Holt neuesten Code von GitHub
-2. ✓ Kompiliert Test-Programm
-3. ✓ Führt es sofort aus
-4. ✓ Zeigt 30 Sekunden lang Magnetometer-Daten
-
-**Oder manuell:**
-
-```bash
-# Script herunterladen
-cd /root
-wget https://raw.githubusercontent.com/lordvampire/goflying/stratux_master/test-on-pi.sh
-chmod +x test-on-pi.sh
-
-# Ausführen
-sudo ./test-on-pi.sh
-```
-
-## Methode 2: Lokal kompilieren, dann deployen
-
-**Auf deinem PC:**
+**Ein Befehl - kompilieren, deployen UND ausführen:**
 
 ```bash
 cd /home/faruktuefekli/GitHub/icm20948/goflying-b3nn0
-
-# Kompilieren für ARM (Raspberry Pi)
-chmod +x build-test.sh
-./build-test.sh <raspberry-pi-ip>
-
-# Oder nur kompilieren ohne Deploy:
-./build-test.sh
+./build-test.sh <raspberry-pi-ip> --run
 ```
 
-**Auf dem Raspberry Pi:**
+**Beispiel:**
+```bash
+./build-test.sh 192.168.1.100 --run
+```
+
+Das Script:
+1. ✓ Kompiliert lokal für ARM (Raspberry Pi)
+2. ✓ Deployed automatisch per scp
+3. ✓ Führt Test sofort aus
+4. ✓ Zeigt Magnetometer-Daten live
+
+**Nur kompilieren und deployen (ohne ausführen):**
 
 ```bash
-# Wenn automatisch deployed:
-sudo /root/test-magnetometer
+./build-test.sh 192.168.1.100
 
-# Oder manuell kopiert:
-scp test-magnetometer-arm root@<pi-ip>:/root/test-magnetometer
-ssh root@<pi-ip>
-sudo /root/test-magnetometer
+# Dann manuell auf dem Pi:
+ssh root@192.168.1.100 'sudo /root/test-magnetometer'
 ```
 
 ## Erwartete Ausgabe
@@ -138,6 +114,11 @@ Das Test-Programm:
 ## Workflow für schnelle Iteration
 
 1. Code ändern in `/home/faruktuefekli/GitHub/icm20948/goflying-b3nn0/icm20948/`
-2. Commit & push zu `lordvampire/goflying@stratux_master`
-3. Auf Pi: `curl -sSL https://raw.githubusercontent.com/.../test-on-pi.sh | sudo bash`
-4. Ergebnis in 10-20 Sekunden statt 5-10 Minuten! 🚀
+2. Commit (push optional, da lokal kompiliert wird)
+3. `./build-test.sh <pi-ip> --run`
+4. Ergebnis in **10-20 Sekunden** statt 5-10 Minuten! 🚀
+
+**Noch schneller (ohne commit):**
+- Änderungen sind sofort im lokalen Code
+- `./build-test.sh <pi-ip> --run` nutzt automatisch die neuesten lokalen Änderungen
+- Kein git commit/push nötig zum Testen!
