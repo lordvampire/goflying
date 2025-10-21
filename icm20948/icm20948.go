@@ -207,6 +207,14 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			return nil, errors.New("Error setting register bank 3")
 		}
 
+		// Set I2C Master ODR (Output Data Rate) to 100 Hz (0x09)
+		// This determines how often the I2C master reads from slaves
+		// Values: 0=1.1kHz, 1=500Hz, 2=333Hz, ..., 9=100Hz, 10=90.9Hz, 11=83.3Hz
+		if err := mpu.i2cWrite(ICMREG_I2C_MST_ODR_CONFIG, 0x04); err != nil {
+			return nil, errors.New("Error setting I2C master ODR")
+		}
+		log.Println("ICM20948: I2C master ODR set to 200 Hz")
+
 		// Set I2C master clock to 400 kHz
 		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07); err != nil {
 			return nil, errors.New("Error setting up I2C master clock")
