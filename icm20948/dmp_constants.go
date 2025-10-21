@@ -226,7 +226,9 @@ const (
 	MPU_BANK_SIZE                = 0xFF
 	CFG_MOTION_BIAS              = 0x4B8 // Enable/disable gyro bias compensation
 	BIT_FIFO_SIZE_1024           = 0x40  // FIFO buffer size
-	BIT_AUX_IF_EN          uint8 = 0x20
+	BIT_I2C_MST_EN         uint8 = 0x20  // USER_CTRL: Enable I2C Master mode (Bit 5)
+	BIT_I2C_IF_DIS         uint8 = 0x10  // USER_CTRL: Disable I2C Slave interface (Bit 4)
+	BIT_AUX_IF_EN          uint8 = 0x20  // Deprecated alias for BIT_I2C_MST_EN
 	BIT_BYPASS_EN                = 0x02
 	AKM_POWER_DOWN               = 0x00
 	BIT_I2C_READ                 = 0x80

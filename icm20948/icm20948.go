@@ -273,10 +273,12 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		}
 
 		// NOW enable I2C master mode (after all configuration is done!)
-		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_AUX_IF_EN); err != nil {
+		// Set BOTH I2C_MST_EN and I2C_IF_DIS bits
+		// This enables I2C Master and disables I2C Slave interface
+		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_I2C_MST_EN|BIT_I2C_IF_DIS); err != nil {
 			return nil, errors.New("Error enabling I2C master mode")
 		}
-		log.Println("ICM20948: I2C master mode enabled (after configuration)")
+		log.Println("ICM20948: I2C master enabled, I2C slave disabled (USER_CTRL=0x30)")
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
 
