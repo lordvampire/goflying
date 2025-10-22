@@ -145,6 +145,11 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		return nil, errors.New("Error waking ICM20948")
 	}
 
+	log.Println("========================================")
+	log.Println("STEP 1: After Reset and Wake")
+	log.Println("========================================")
+	mpu.dumpBank0Regs()
+
 	// CRITICAL: Enable gyro and accel immediately (PWR_MGMT_2 = 0x00)
 	// This MUST be done early for I2C Master to work!
 	// Python test proved this must come RIGHT AFTER PWR_MGMT_1
@@ -153,6 +158,11 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	}
 	time.Sleep(50 * time.Millisecond) // Give sensors time to start
 	log.Println("ICM20948: Gyro and Accel powered on (PWR_MGMT_2=0x00)")
+
+	log.Println("========================================")
+	log.Println("STEP 2: After PWR_MGMT_2 = 0x00")
+	log.Println("========================================")
+	mpu.dumpBank0Regs()
 
 	// ============================================================================
 	// CRITICAL: Configure Gyro/Accel sensitivity BEFORE I2C Master Init
@@ -186,17 +196,11 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 	time.Sleep(10 * time.Millisecond) // Give it time to settle
 
-	// Verify with readback
-	gyro_cfg, _ := mpu.i2cRead(0x01)
-	accel_cfg, _ := mpu.i2cRead(0x14)
+	log.Println("========================================")
+	log.Println("STEP 3: After Gyro/Accel Config (Bank 2)")
+	log.Println("========================================")
+	mpu.dumpBank2Regs()
 	mpu.setRegBank(0)
-
-	log.Printf("ICM20948: Bank 2 readback: GYRO_CONFIG=0x%02X (expect 0x06), ACCEL_CONFIG=0x%02X (expect 0x04)",
-		gyro_cfg, accel_cfg)
-
-	if gyro_cfg != 0x06 || accel_cfg != 0x04 {
-		log.Printf("WARNING: Bank 2 registers not correct! This will prevent I2C Master from working!")
-	}
 
 	// NOW Initialize I2C Master (AFTER Gyro/Accel config, like Python)
 	if mpu.enableMag {
@@ -929,6 +933,88 @@ func (mpu *ICM20948) memWrite(addr uint16, data *[]byte) error {
 	return nil
 }
 
+// dumpBank0Regs logs important Bank 0 registers for debugging
+func (mpu *ICM20948) dumpBank0Regs() {
+	mpu.setRegBank(0)
+	who, _ := mpu.i2cRead(0x00)
+	pwr1, _ := mpu.i2cRead(ICMREG_PWR_MGMT_1)
+	pwr2, _ := mpu.i2cRead(ICMREG_PWR_MGMT_2)
+	user, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+	intcfg, _ := mpu.i2cRead(ICMREG_INT_PIN_CFG)
+
+	log.Println("  [DUMP] Bank 0:")
+	log.Printf("    WHO_AM_I    (0x00) = 0x%02X", who)
+	log.Printf("    PWR_MGMT_1  (0x06) = 0x%02X", pwr1)
+	log.Printf("    PWR_MGMT_2  (0x07) = 0x%02X", pwr2)
+	log.Printf("    USER_CTRL   (0x03) = 0x%02X (I2C_MST_EN=%v)", user, (user&0x20) != 0)
+	log.Printf("    INT_PIN_CFG (0x0F) = 0x%02X (BYPASS=%v)", intcfg, (intcfg&0x02) != 0)
+}
+
+// dumpBank2Regs logs important Bank 2 registers for debugging
+func (mpu *ICM20948) dumpBank2Regs() {
+	mpu.setRegBank(2)
+	gyro, _ := mpu.i2cRead(0x01)
+	accel, _ := mpu.i2cRead(0x14)
+
+	log.Println("  [DUMP] Bank 2:")
+	log.Printf("    GYRO_CONFIG_1 (0x01) = 0x%02X", gyro)
+	log.Printf("    ACCEL_CONFIG  (0x14) = 0x%02X", accel)
+}
+
+// dumpBank3Regs logs important Bank 3 registers for debugging
+func (mpu *ICM20948) dumpBank3Regs() {
+	mpu.setRegBank(3)
+	odr, _ := mpu.i2cRead(ICMREG_I2C_MST_ODR_CONFIG)
+	ctrl, _ := mpu.i2cRead(ICMREG_I2C_MST_CTRL)
+	status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+	slv0_addr, _ := mpu.i2cRead(0x03)
+	slv0_reg, _ := mpu.i2cRead(0x04)
+	slv0_ctrl, _ := mpu.i2cRead(0x05)
+	slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
+	slv4_reg, _ := mpu.i2cRead(ICMREG_I2C_SLV4_REG)
+	slv4_ctrl, _ := mpu.i2cRead(ICMREG_I2C_SLV4_CTRL)
+
+	// Decode status bits
+	statusBits := ""
+	if status&0x80 != 0 {
+		statusBits += "PASS_THROUGH | "
+	}
+	if status&0x40 != 0 {
+		statusBits += "SLV4_DONE | "
+	}
+	if status&0x10 != 0 {
+		statusBits += "LOST_ARB | "
+	}
+	if status&0x08 != 0 {
+		statusBits += "SLV4_NACK | "
+	}
+	if status&0x04 != 0 {
+		statusBits += "SLV3_NACK | "
+	}
+	if status&0x02 != 0 {
+		statusBits += "SLV2_NACK | "
+	}
+	if status&0x01 != 0 {
+		statusBits += "SLV1_NACK | "
+	}
+	if statusBits == "" {
+		statusBits = "NONE"
+	} else {
+		statusBits = statusBits[:len(statusBits)-3] // Remove trailing " | "
+	}
+
+	log.Println("  [DUMP] Bank 3:")
+	log.Printf("    I2C_MST_ODR_CONFIG (0x00) = 0x%02X", odr)
+	log.Printf("    I2C_MST_CTRL       (0x01) = 0x%02X", ctrl)
+	log.Printf("    I2C_MST_STATUS     (0x17) = 0x%02X [%s]", status, statusBits)
+	log.Printf("    I2C_SLV0_ADDR      (0x03) = 0x%02X", slv0_addr)
+	log.Printf("    I2C_SLV0_REG       (0x04) = 0x%02X", slv0_reg)
+	log.Printf("    I2C_SLV0_CTRL      (0x05) = 0x%02X", slv0_ctrl)
+	log.Printf("    I2C_SLV4_ADDR      (0x13) = 0x%02X", slv4_addr)
+	log.Printf("    I2C_SLV4_REG       (0x14) = 0x%02X", slv4_reg)
+	log.Printf("    I2C_SLV4_CTRL      (0x15) = 0x%02X", slv4_ctrl)
+}
+
 // initI2CMaster initializes the I2C Master for magnetometer communication
 // RADICALLY SIMPLIFIED based on working Python test
 // This matches the exact sequence that Python uses and works!
@@ -945,6 +1031,11 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Println("  ✓ I2C bypass disabled")
 	time.Sleep(10 * time.Millisecond)
 
+	log.Println("========================================")
+	log.Println("STEP 4: After Disabling I2C Bypass")
+	log.Println("========================================")
+	mpu.dumpBank0Regs()
+
 	// Step 2: Configure I2C Master (Bank 3)
 	mpu.setRegBank(3)
 	
@@ -958,6 +1049,11 @@ func (mpu *ICM20948) initI2CMaster() error {
 		return fmt.Errorf("Error setting I2C Master CTRL: %v", err)
 	}
 	log.Println("  ✓ I2C Master configured: 200 Hz ODR, 400 kHz clock")
+
+	log.Println("========================================")
+	log.Println("STEP 5: After Configuring I2C Master (Bank 3)")
+	log.Println("========================================")
+	mpu.dumpBank3Regs()
 
 	// Step 3: Enable I2C Master (Bank 0, USER_CTRL = 0x20)
 	mpu.setRegBank(0)
@@ -973,42 +1069,77 @@ func (mpu *ICM20948) initI2CMaster() error {
 	}
 	log.Printf("  ✓ I2C Master enabled (USER_CTRL=0x%02X)", userCtrl)
 
+	log.Println("========================================")
+	log.Println("STEP 6: After Enabling I2C Master (USER_CTRL bit 5)")
+	log.Println("========================================")
+	mpu.dumpBank0Regs()
+	mpu.dumpBank3Regs()
+
 	// Step 4: Test Slave 4 communication with AK09916 WHO_AM_I
-	log.Println("  Testing Slave 4 communication...")
+	log.Println("========================================")
+	log.Println("STEP 7: Testing Slave 4 Communication")
+	log.Println("========================================")
 	mpu.setRegBank(3)
 
-	// DEBUG: Read all Bank 3 registers before Slave 4 transaction
-	odr, _ := mpu.i2cRead(ICMREG_I2C_MST_ODR_CONFIG)
-	ctrl, _ := mpu.i2cRead(ICMREG_I2C_MST_CTRL)
-	status_before, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
-	log.Printf("  Bank 3 before Slave 4: ODR=0x%02X, CTRL=0x%02X, STATUS=0x%02X", odr, ctrl, status_before)
+	log.Println("  [WRITE] I2C_SLV4_ADDR (0x13) = 0x8C (READ from 0x0C)")
+	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR)
+	log.Println("  [WRITE] I2C_SLV4_REG  (0x14) = 0x00 (WIA1)")
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)
+	log.Println("  [WRITE] I2C_SLV4_CTRL (0x15) = 0x80 (ENABLE)")
+	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
 
-	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR) // Read from 0x0C
-	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)                   // WIA1
-	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)                  // Enable
-
-	// DEBUG: Readback what we just wrote
+	log.Println("")
+	log.Println("  [DUMP] Slave 4 config readback:")
 	slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
 	slv4_reg, _ := mpu.i2cRead(ICMREG_I2C_SLV4_REG)
 	slv4_ctrl, _ := mpu.i2cRead(ICMREG_I2C_SLV4_CTRL)
-	log.Printf("  Slave 4 config: ADDR=0x%02X (expect 0x8C), REG=0x%02X (expect 0x00), CTRL=0x%02X (expect 0x80)",
-		slv4_addr, slv4_reg, slv4_ctrl)
+	log.Printf("    I2C_SLV4_ADDR = 0x%02X (expect 0x8C)", slv4_addr)
+	log.Printf("    I2C_SLV4_REG  = 0x%02X (expect 0x00)", slv4_reg)
+	log.Printf("    I2C_SLV4_CTRL = 0x%02X (expect 0x80)", slv4_ctrl)
 
 	// Poll for SLV4_DONE
+	log.Println("")
+	log.Println("  [POLL] Waiting for SLV4_DONE bit (0x40 in I2C_MST_STATUS)...")
 	wia1 := byte(0x00)
+	success := false
 	for i := 0; i < 50; i++ {
 		time.Sleep(10 * time.Millisecond)
-		mpu.setRegBank(3) // CRITICAL: Must be in Bank 3 to read I2C_MST_STATUS!
+		mpu.setRegBank(3) // CRITICAL: Must be in Bank 3!
 		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+
+		// Decode status bits for logging
+		statusBits := ""
+		if status&0x40 != 0 {
+			statusBits += "SLV4_DONE | "
+		}
+		if status&0x08 != 0 {
+			statusBits += "SLV4_NACK | "
+		}
+		if statusBits == "" {
+			statusBits = "NONE"
+		} else {
+			statusBits = statusBits[:len(statusBits)-3]
+		}
+
+		// Log at intervals like Python
+		if i < 5 || i%10 == 0 || i == 49 {
+			log.Printf("    Poll %2d: I2C_MST_STATUS=0x%02X [%s]", i+1, status, statusBits)
+		}
+
 		if (status & 0x40) != 0 { // SLV4_DONE
 			wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
-			log.Printf("  ✓ Slave 4 read WIA1=0x%02X after %dms", wia1, (i+1)*10)
+			log.Println("")
+			log.Printf("  [SUCCESS] SLV4_DONE after %dms", (i+1)*10)
+			log.Printf("  [READ] I2C_SLV4_DI (0x17) = 0x%02X", wia1)
+			success = true
 			break
 		}
-		// Log status at intervals for debugging
-		if i == 0 || i == 10 || i == 49 {
-			log.Printf("  Slave 4 WIA1 poll %d: status=0x%02X", i+1, status)
-		}
+	}
+
+	if !success {
+		log.Println("")
+		log.Println("  [FAILED] SLV4_DONE never set!")
+		mpu.dumpBank3Regs()
 	}
 
 	if wia1 != 0x48 {
