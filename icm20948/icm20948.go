@@ -310,54 +310,65 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		// I2C Master runs at 200Hz = 5ms per cycle, wait for at least 20 cycles
 		time.Sleep(500 * time.Millisecond)
 
-		// Verify AK09916 is responding by reading WHO_AM_I registers
-		log.Println("ICM20948: Verifying AK09916 communication...")
+		// Verify AK09916 is responding by reading WHO_AM_I registers using Slave 4
+		// Slave 4 is designed for single-shot I2C transactions (unlike Slave 0-3 for continuous reads)
+		log.Println("ICM20948: Verifying AK09916 communication via Slave 4...")
 
-		// Try scanning I2C addresses 0x0C, 0x0D, 0x0E, 0x0F (common mag addresses)
-		log.Println("ICM20948: Scanning for AK09916 on I2C master bus...")
 		if err := mpu.setRegBank(3); err != nil {
-			log.Printf("ICM20948: Warning: Could not switch to bank 3: %v\n", err)
+			log.Printf("ICM20948 Warning: Could not switch to bank 3: %v\n", err)
 		} else {
-			for addr := byte(0x0C); addr <= 0x0F; addr++ {
-				// Try to read WHO_AM_I from this address
-				mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|addr)
-				mpu.i2cWrite(ICMREG_I2C_SLV0_REG, 0x00) // WIA1 register
-				mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|2)
-				// Wait longer - multiple I2C master cycles (200Hz = 5ms/cycle)
-				time.Sleep(50 * time.Millisecond)
+			// Use Slave 4 for single-shot read (like Python test that works)
+			// Read WIA1 (0x00) from AK09916 (0x0C)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR) // 0x8C = Read from 0x0C
+			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_WIA1)                    // Register 0x00
+			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)                   // 0x80 = Enable
 
-				mpu.setRegBank(0)
-				val1, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
-				val2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_01)
-
-				if val1 != 0x00 || val2 != 0x00 {
-					log.Printf("ICM20948: Found device at 0x%02X: 0x%02X 0x%02X\n", addr, val1, val2)
+			// Poll for SLV4_DONE bit (like Python does)
+			wia1 := byte(0x00)
+			done := false
+			for i := 0; i < 50; i++ { // 500ms timeout
+				time.Sleep(10 * time.Millisecond)
+				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+				if (status & 0x40) != 0 { // SLV4_DONE bit
+					wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
+					log.Printf("ICM20948: Slave 4 read WIA1 completed after %dms\n", (i+1)*10)
+					done = true
+					break
 				}
-				mpu.setRegBank(3)
 			}
-		}
 
-		// Now try the expected address 0x0C
-		// Switch to bank 3 to configure slave 0 for WHO_AM_I read
-		if err := mpu.setRegBank(3); err != nil {
-			log.Printf("ICM20948 Warning: Could not switch to bank 3 for verification: %v\n", err)
-		} else {
-			// Configure slave 0 to read WIA1 and WIA2 (2 bytes)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_WIA1)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|2) // Read 2 bytes
+			if !done {
+				log.Println("ICM20948: Slave 4 read WIA1 TIMEOUT (SLV4_DONE never set)")
+			}
 
-			time.Sleep(10 * time.Millisecond)
+			// Read WIA2 (0x01)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_WIA2)
+			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)
 
-			// Switch to bank 0 to read EXT_SENS_DATA
-			mpu.setRegBank(0)
-			wia1, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
-			wia2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_01)
+			wia2 := byte(0x00)
+			done = false
+			for i := 0; i < 50; i++ {
+				time.Sleep(10 * time.Millisecond)
+				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+				if (status & 0x40) != 0 {
+					wia2, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
+					log.Printf("ICM20948: Slave 4 read WIA2 completed after %dms\n", (i+1)*10)
+					done = true
+					break
+				}
+			}
+
+			if !done {
+				log.Println("ICM20948: Slave 4 read WIA2 TIMEOUT (SLV4_DONE never set)")
+			}
 
 			log.Printf("ICM20948: AK09916 WHO_AM_I: WIA1=0x%02X (expect 0x48), WIA2=0x%02X (expect 0x09)\n", wia1, wia2)
 
 			if wia1 != 0x48 || wia2 != 0x09 {
 				log.Printf("ICM20948 ERROR: AK09916 not responding correctly!\n")
+			} else {
+				log.Println("ICM20948: AK09916 detected successfully via Slave 4!")
 			}
 
 			// FIRST: Try soft reset of AK09916 via CNTL3
