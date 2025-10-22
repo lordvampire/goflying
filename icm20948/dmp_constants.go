@@ -133,7 +133,8 @@ const (
 
 	// Reg bank 3.
 	ICMREG_I2C_MST_ODR_CONFIG = 0x00 // I2C Master ODR Configuration (Bank 3)
-	ICMREG_I2C_MST_CTRL       = 0x01
+	ICMREG_I2C_MST_CTRL       = 0x01 // I2C Master Control (Bank 3)
+	ICMREG_I2C_MST_STATUS     = 0x17 // I2C Master Status (Bank 3) - Same register as I2C_SLV4_DI
 	ICMREG_I2C_SLV0_ADDR      = 0x03
 	ICMREG_I2C_SLV0_REG  = 0x04
 	ICMREG_I2C_SLV0_CTRL = 0x05
