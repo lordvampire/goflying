@@ -145,6 +145,15 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		return nil, errors.New("Error waking ICM20948")
 	}
 
+	// CRITICAL: Enable gyro and accel immediately (PWR_MGMT_2 = 0x00)
+	// This MUST be done early for I2C Master to work!
+	// Python Sequence 2 (which works) does this right after PWR_MGMT_1
+	if err := mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00); err != nil {
+		return nil, errors.New("Error enabling gyro/accel in PWR_MGMT_2")
+	}
+	time.Sleep(50 * time.Millisecond) // Give sensors time to start
+	log.Println("ICM20948: Gyro and Accel powered on early (PWR_MGMT_2=0x00)")
+
 	// Note: inv_mpu.c sets some registers here to allocate 1kB to the FIFO buffer and 3kB to the DMP.
 	// It doesn't seem to be supported in the 1.6 version of the register map and we're not using FIFO anyway,
 	// so we skip this.
@@ -189,19 +198,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	// Set up magnetometer (AK09916)
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing AK09916 magnetometer...")
-
-		// CRITICAL: Enable gyro and accel (PWR_MGMT_2 = 0x00)
-		// This is REQUIRED for I2C Master to function!
-		// The I2C Master needs the gyro/accel clock to operate.
-		// Without this, I2C Master transactions will not execute (SLV4_DONE never sets).
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank 0 for PWR_MGMT_2")
-		}
-		if err := mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00); err != nil {
-			return nil, errors.New("Error enabling gyro/accel in PWR_MGMT_2")
-		}
-		time.Sleep(50 * time.Millisecond) // Give sensors time to start
-		log.Println("ICM20948: Gyro and Accel enabled for I2C Master (PWR_MGMT_2=0x00)")
+		log.Println("ICM20948: PWR_MGMT_2 already set to 0x00 during initialization")
 
 		// CRITICAL: Disable I2C bypass mode FIRST (before any I2C master config)
 		// This is essential - bypass mode routes aux I2C to external pins, preventing I2C master from working
