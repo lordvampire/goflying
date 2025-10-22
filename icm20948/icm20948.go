@@ -155,11 +155,26 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	log.Println("ICM20948: Gyro and Accel powered on (PWR_MGMT_2=0x00)")
 
 	// ============================================================================
-	// RADICAL SIMPLIFICATION: Initialize I2C Master NOW (if magnetometer enabled)
-	// Python test proved this MUST happen before complex sensor configuration!
+	// CRITICAL: Configure Gyro/Accel sensitivity BEFORE I2C Master Init
+	// Python test does this exact sequence:
+	// 1. PWR_MGMT_2 = 0x00
+	// 2. Configure Gyro/Accel (Bank 2)  ← HERE!
+	// 3. I2C Master Init
 	// ============================================================================
+	log.Println("ICM20948: Configuring Gyro/Accel sensitivity (before I2C Master)")
+
+	// Set Gyro and Accel sensitivities (minimal config, like Python)
+	if err := mpu.SetGyroSensitivity(sensitivityGyro); err != nil {
+		log.Println(err)
+	}
+
+	if err := mpu.SetAccelSensitivity(sensitivityAccel); err != nil {
+		log.Println(err)
+	}
+
+	// NOW Initialize I2C Master (AFTER Gyro/Accel config, like Python)
 	if mpu.enableMag {
-		log.Println("ICM20948: Initializing I2C Master for magnetometer (EARLY - like Python)")
+		log.Println("ICM20948: Initializing I2C Master for magnetometer (AFTER Gyro/Accel config)")
 
 		if err := mpu.initI2CMaster(); err != nil {
 			log.Printf("ICM20948: Magnetometer initialization failed: %v\n", err)
@@ -168,16 +183,6 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		} else {
 			log.Println("ICM20948: I2C Master initialized successfully")
 		}
-	}
-
-	// NOW configure Gyro and Accel (AFTER I2C Master is initialized)
-	// Set Gyro and Accel sensitivities
-	if err := mpu.SetGyroSensitivity(sensitivityGyro); err != nil {
-		log.Println(err)
-	}
-
-	if err := mpu.SetAccelSensitivity(sensitivityAccel); err != nil {
-		log.Println(err)
 	}
 
 	sampRate := byte(1125/mpu.sampleRate - 1)
