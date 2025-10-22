@@ -147,21 +147,30 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 	// CRITICAL: Enable gyro and accel immediately (PWR_MGMT_2 = 0x00)
 	// This MUST be done early for I2C Master to work!
-	// Python Sequence 2 (which works) does this right after PWR_MGMT_1
+	// Python test proved this must come RIGHT AFTER PWR_MGMT_1
 	if err := mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00); err != nil {
 		return nil, errors.New("Error enabling gyro/accel in PWR_MGMT_2")
 	}
 	time.Sleep(50 * time.Millisecond) // Give sensors time to start
-	log.Println("ICM20948: Gyro and Accel powered on early (PWR_MGMT_2=0x00)")
+	log.Println("ICM20948: Gyro and Accel powered on (PWR_MGMT_2=0x00)")
 
-	// Note: inv_mpu.c sets some registers here to allocate 1kB to the FIFO buffer and 3kB to the DMP.
-	// It doesn't seem to be supported in the 1.6 version of the register map and we're not using FIFO anyway,
-	// so we skip this.
-	// Don't let FIFO overwrite DMP data
-	//if err := mpu.i2cWrite(ICMREG_ACCEL_CONFIG_2, BIT_FIFO_SIZE_1024|0x8); err != nil {
-	//	return nil, errors.New("Error setting up ICM20948")
-	//}
+	// ============================================================================
+	// RADICAL SIMPLIFICATION: Initialize I2C Master NOW (if magnetometer enabled)
+	// Python test proved this MUST happen before complex sensor configuration!
+	// ============================================================================
+	if mpu.enableMag {
+		log.Println("ICM20948: Initializing I2C Master for magnetometer (EARLY - like Python)")
 
+		if err := mpu.initI2CMaster(); err != nil {
+			log.Printf("ICM20948: Magnetometer initialization failed: %v\n", err)
+			// Don't return error - continue without magnetometer
+			mpu.enableMag = false
+		} else {
+			log.Println("ICM20948: I2C Master initialized successfully")
+		}
+	}
+
+	// NOW configure Gyro and Accel (AFTER I2C Master is initialized)
 	// Set Gyro and Accel sensitivities
 	if err := mpu.SetGyroSensitivity(sensitivityGyro); err != nil {
 		log.Println(err)
@@ -195,260 +204,6 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 
 	// Turn off interrupts. Not necessary - default off.
 
-	// Set up magnetometer (AK09916)
-	if mpu.enableMag {
-		log.Println("ICM20948: Initializing AK09916 magnetometer...")
-
-		// CRITICAL: Re-ensure PWR_MGMT_2 = 0x00 right before I2C Master init
-		// Something in the sensor config might have changed it
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank 0 for PWR_MGMT_2 re-check")
-		}
-		pwrMgmt2, _ := mpu.i2cRead(ICMREG_PWR_MGMT_2)
-		log.Printf("ICM20948: PWR_MGMT_2 readback before I2C Master init = 0x%02X\n", pwrMgmt2)
-		if pwrMgmt2 != 0x00 {
-			log.Printf("ICM20948: WARNING! PWR_MGMT_2 was changed to 0x%02X, resetting to 0x00\n", pwrMgmt2)
-			mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00)
-			time.Sleep(50 * time.Millisecond)
-		}
-
-		// CRITICAL: Disable I2C bypass mode FIRST (before any I2C master config)
-		// This is essential - bypass mode routes aux I2C to external pins, preventing I2C master from working
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank 0 for bypass disable")
-		}
-
-		// Write 0x00 to INT_PIN_CFG to ensure bypass mode is OFF
-		if err := mpu.i2cWrite(ICMREG_INT_PIN_CFG, 0x00); err != nil {
-			return nil, errors.New("Error disabling I2C bypass mode")
-		}
-		log.Println("ICM20948: I2C bypass mode explicitly disabled (INT_PIN_CFG=0x00)")
-		time.Sleep(10 * time.Millisecond)
-
-		// SECOND: Ensure I2C Master is NOT in duty-cycle mode
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank 0")
-		}
-
-		// Read LP_CONFIG and ensure I2C_MST_CYCLE is 0 (continuous, not duty-cycle)
-		lpConfig, err := mpu.i2cRead(ICMREG_LP_CONFIG)
-		if err != nil {
-			log.Printf("ICM20948: Warning: Could not read LP_CONFIG: %v\n", err)
-		} else {
-			log.Printf("ICM20948: LP_CONFIG = 0x%02X\n", lpConfig)
-			// Clear I2C_MST_CYCLE bit (bit 6) to ensure continuous operation
-			if (lpConfig & 0x40) != 0 {
-				lpConfig &= ^byte(0x40)
-				mpu.i2cWrite(ICMREG_LP_CONFIG, lpConfig)
-				log.Println("ICM20948: Disabled I2C_MST_CYCLE (enabled continuous mode)")
-			}
-		}
-
-		// Switch to register bank 3 for I2C master configuration
-		// IMPORTANT: Configure BEFORE enabling!
-		if err := mpu.setRegBank(3); err != nil {
-			return nil, errors.New("Error setting register bank 3")
-		}
-
-		// Set I2C Master ODR (Output Data Rate) to 100 Hz (0x09)
-		// This determines how often the I2C master reads from slaves
-		// Values: 0=1.1kHz, 1=500Hz, 2=333Hz, ..., 9=100Hz, 10=90.9Hz, 11=83.3Hz
-		if err := mpu.i2cWrite(ICMREG_I2C_MST_ODR_CONFIG, 0x04); err != nil {
-			return nil, errors.New("Error setting I2C master ODR")
-		}
-		log.Println("ICM20948: I2C master ODR set to 200 Hz")
-
-		// Set I2C master clock to 400 kHz with STOP between reads
-		// BIT_I2C_MST_P_NSR: Issues STOP condition between reads (critical for AK09916)
-		if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x07|BIT_I2C_MST_P_NSR); err != nil {
-			return nil, errors.New("Error setting up I2C master clock")
-		}
-		log.Println("ICM20948: I2C master clock set to 400 kHz with STOP between reads")
-
-		// Configure I2C Slave 0 to read from AK09916
-		// Set slave 0 address to AK09916 with read bit
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR); err != nil {
-			return nil, errors.New("Error setting up AK09916 slave address")
-		}
-
-		// Start reading from ST1 register
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_ST1); err != nil {
-			return nil, errors.New("Error setting up AK09916 read register")
-		}
-
-		// Enable 9-byte reads on slave 0 (ST1 + 6 bytes mag data + ST2 + 1 reserved)
-		if err := mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|9); err != nil {
-			return nil, errors.New("Error setting up AK09916 read control")
-		}
-
-		// IMPORTANT: We DON'T use Slave 1 for continuous writes
-		// Instead, we'll use direct register writes after enabling I2C master
-
-		// Set continuous measurement mode based on sample rate
-		var magMode byte
-		if mpu.sampleRate >= 100 {
-			magMode = AK09916_MODE_CONT4 // 100 Hz
-		} else if mpu.sampleRate >= 50 {
-			magMode = AK09916_MODE_CONT3 // 50 Hz
-		} else if mpu.sampleRate >= 20 {
-			magMode = AK09916_MODE_CONT2 // 20 Hz
-		} else {
-			magMode = AK09916_MODE_CONT1 // 10 Hz
-		}
-
-		log.Printf("ICM20948: Will set AK09916 to continuous mode 0x%02X (sample rate: %d Hz)\n", magMode, mpu.sampleRate)
-
-		// Set magnetometer hardware calibration values (AK09916 doesn't have sensitivity adjustment like AK8963)
-		// Using default scale factor
-		mpu.mpuCalData.M01 = scaleMagAK09916
-		mpu.mpuCalData.M02 = scaleMagAK09916
-		mpu.mpuCalData.M03 = scaleMagAK09916
-
-		// Switch back to register bank 0
-		if err := mpu.setRegBank(0); err != nil {
-			return nil, errors.New("Error setting register bank 0")
-		}
-
-		// NOW enable I2C master mode (after all configuration is done!)
-		// FIRST: Read current USER_CTRL value to see if anything else is set
-		userCtrlBefore, _ := mpu.i2cRead(ICMREG_USER_CTRL)
-		log.Printf("ICM20948: USER_CTRL before I2C Master enable = 0x%02X\n", userCtrlBefore)
-
-		// Enable I2C Master but keep I2C Slave enabled (Stratux needs to talk to us!)
-		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_I2C_MST_EN); err != nil {
-			return nil, errors.New("Error enabling I2C master mode")
-		}
-		time.Sleep(10 * time.Millisecond)
-
-		// Verify it was actually set
-		userCtrlAfter, _ := mpu.i2cRead(ICMREG_USER_CTRL)
-		log.Printf("ICM20948: USER_CTRL after write = 0x%02X (expect 0x20 = I2C_MST_EN)\n", userCtrlAfter)
-
-		if (userCtrlAfter & BIT_I2C_MST_EN) == 0 {
-			log.Println("ICM20948: ERROR! I2C_MST_EN bit was NOT set in USER_CTRL!")
-			log.Println("ICM20948: This means I2C Master will not function!")
-		}
-
-		log.Println("ICM20948: I2C master enabled (USER_CTRL=0x20)")
-
-		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
-
-		// Wait longer for I2C master to stabilize and start polling
-		// I2C Master runs at 200Hz = 5ms per cycle, wait for at least 20 cycles
-		time.Sleep(500 * time.Millisecond)
-
-		// Verify AK09916 is responding by reading WHO_AM_I registers using Slave 4
-		// Slave 4 is designed for single-shot I2C transactions (unlike Slave 0-3 for continuous reads)
-		log.Println("ICM20948: Verifying AK09916 communication via Slave 4...")
-
-		if err := mpu.setRegBank(3); err != nil {
-			log.Printf("ICM20948 Warning: Could not switch to bank 3: %v\n", err)
-		} else {
-			// Use Slave 4 for single-shot read (like Python test that works)
-			// Read WIA1 (0x00) from AK09916 (0x0C)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR) // 0x8C = Read from 0x0C
-			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_WIA1)                    // Register 0x00
-			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)                   // 0x80 = Enable
-
-			// Poll for SLV4_DONE bit (like Python does)
-			wia1 := byte(0x00)
-			done := false
-			for i := 0; i < 50; i++ { // 500ms timeout
-				time.Sleep(10 * time.Millisecond)
-				mpu.setRegBank(3) // Ensure we're in Bank 3 for status read
-				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
-				if (status & 0x40) != 0 { // SLV4_DONE bit
-					wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
-					log.Printf("ICM20948: Slave 4 read WIA1 completed after %dms\n", (i+1)*10)
-					done = true
-					break
-				}
-				if i == 0 || i == 10 || i == 49 {
-					log.Printf("ICM20948: Slave 4 WIA1 poll %d: status=0x%02X\n", i+1, status)
-				}
-			}
-
-			if !done {
-				log.Println("ICM20948: Slave 4 read WIA1 TIMEOUT (SLV4_DONE never set)")
-			}
-
-			// Read WIA2 (0x01)
-			mpu.setRegBank(3)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_WIA2)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)
-
-			wia2 := byte(0x00)
-			done = false
-			for i := 0; i < 50; i++ {
-				time.Sleep(10 * time.Millisecond)
-				mpu.setRegBank(3)
-				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
-				if (status & 0x40) != 0 {
-					wia2, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
-					log.Printf("ICM20948: Slave 4 read WIA2 completed after %dms\n", (i+1)*10)
-					done = true
-					break
-				}
-				if i == 0 || i == 10 || i == 49 {
-					log.Printf("ICM20948: Slave 4 WIA2 poll %d: status=0x%02X\n", i+1, status)
-				}
-			}
-
-			if !done {
-				log.Println("ICM20948: Slave 4 read WIA2 TIMEOUT (SLV4_DONE never set)")
-			}
-
-			log.Printf("ICM20948: AK09916 WHO_AM_I: WIA1=0x%02X (expect 0x48), WIA2=0x%02X (expect 0x09)\n", wia1, wia2)
-
-			if wia1 != 0x48 || wia2 != 0x09 {
-				log.Printf("ICM20948 ERROR: AK09916 not responding correctly!\n")
-			} else {
-				log.Println("ICM20948: AK09916 detected successfully via Slave 4!")
-			}
-
-			// FIRST: Try soft reset of AK09916 via CNTL3
-			log.Println("ICM20948: Sending soft reset to AK09916 via CNTL3...")
-			mpu.setRegBank(3)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL3) // CNTL3 = 0x32
-			mpu.i2cWrite(ICMREG_I2C_SLV4_DO, 0x01) // SRST bit
-			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)
-			time.Sleep(100 * time.Millisecond) // Wait for reset to complete
-
-			// NOW write to AK09916 CNTL2 using Slave 4 (single transaction)
-			log.Printf("ICM20948: Writing 0x%02X to AK09916 CNTL2 via Slave 4...\n", magMode)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode (no BIT_I2C_READ)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL2)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_DO, magMode)
-			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN) // Start single transaction
-
-			// Wait for transaction to complete (check I2C_MST_STATUS or just wait)
-			time.Sleep(20 * time.Millisecond)
-
-			// Read back CNTL2 to verify mode was set
-			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_CNTL2)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|1) // Read 1 byte
-
-			time.Sleep(10 * time.Millisecond)
-
-			mpu.setRegBank(0)
-			cntl2, _ := mpu.i2cRead(ICMREG_EXT_SENS_DATA_00)
-			log.Printf("ICM20948: AK09916 CNTL2 readback=0x%02X (expected 0x%02X)\n", cntl2, magMode)
-
-			// Reconfigure slave 0 back to reading ST1+mag data
-			mpu.setRegBank(3)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_ST1)
-			mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, BIT_SLAVE_EN|9)
-			mpu.setRegBank(0)
-
-			log.Println("ICM20948: Slave 0 reconfigured for continuous ST1+mag data reading")
-		}
-
-		log.Println("ICM20948: AK09916 magnetometer initialization complete")
-	}
 	// Set clock source to PLL. Not necessary - default "auto select" (PLL when ready).
 
 	if applyHWOffsets {
@@ -1140,5 +895,107 @@ func (mpu *ICM20948) memWrite(addr uint16, data *[]byte) error {
 		return fmt.Errorf("ICM20948 Error writing to the memory bank: %s\n", err.Error())
 	}
 
+	return nil
+}
+
+// initI2CMaster initializes the I2C Master for magnetometer communication
+// RADICALLY SIMPLIFIED based on working Python test
+// This matches the exact sequence that Python uses and works!
+func (mpu *ICM20948) initI2CMaster() error {
+	log.Println("ICM20948: Starting simplified I2C Master init (Python-style)")
+
+	// Ensure Bank 0
+	mpu.setRegBank(0)
+
+	// Step 1: Disable I2C bypass (INT_PIN_CFG = 0x00)
+	if err := mpu.i2cWrite(ICMREG_INT_PIN_CFG, 0x00); err != nil {
+		return fmt.Errorf("Error disabling bypass: %v", err)
+	}
+	log.Println("  ✓ I2C bypass disabled")
+	time.Sleep(10 * time.Millisecond)
+
+	// Step 2: Configure I2C Master (Bank 3)
+	mpu.setRegBank(3)
+	
+	// I2C Master ODR = 200 Hz (0x04)
+	if err := mpu.i2cWrite(ICMREG_I2C_MST_ODR_CONFIG, 0x04); err != nil {
+		return fmt.Errorf("Error setting I2C Master ODR: %v", err)
+	}
+	
+	// I2C Master clock = 400 kHz + STOP between reads (0x17)
+	if err := mpu.i2cWrite(ICMREG_I2C_MST_CTRL, 0x17); err != nil {
+		return fmt.Errorf("Error setting I2C Master CTRL: %v", err)
+	}
+	log.Println("  ✓ I2C Master configured: 200 Hz ODR, 400 kHz clock")
+
+	// Step 3: Enable I2C Master (Bank 0, USER_CTRL = 0x20)
+	mpu.setRegBank(0)
+	if err := mpu.i2cWrite(ICMREG_USER_CTRL, 0x20); err != nil {
+		return fmt.Errorf("Error enabling I2C Master: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	
+	// Verify
+	userCtrl, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+	if (userCtrl & 0x20) == 0 {
+		return fmt.Errorf("USER_CTRL bit not set! Read: 0x%02X", userCtrl)
+	}
+	log.Printf("  ✓ I2C Master enabled (USER_CTRL=0x%02X)", userCtrl)
+
+	// Step 4: Test Slave 4 communication with AK09916 WHO_AM_I
+	log.Println("  Testing Slave 4 communication...")
+	mpu.setRegBank(3)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR) // Read from 0x0C
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)                   // WIA1
+	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)                  // Enable
+
+	// Poll for SLV4_DONE
+	wia1 := byte(0x00)
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+		if (status & 0x40) != 0 { // SLV4_DONE
+			wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
+			log.Printf("  ✓ Slave 4 read WIA1=0x%02X after %dms", wia1, (i+1)*10)
+			break
+		}
+	}
+
+	if wia1 != 0x48 {
+		return fmt.Errorf("AK09916 not responding! WIA1=0x%02X (expect 0x48)", wia1)
+	}
+
+	// Step 5: Initialize AK09916 via Slave 4
+	log.Println("  Initializing AK09916...")
+	
+	// Reset AK09916 (write 0x01 to CNTL3=0x32)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x32)              // CNTL3
+	mpu.i2cWrite(0x16, 0x01)                              // I2C_SLV4_DO = 0x01 (SRST)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)             // Enable
+	time.Sleep(100 * time.Millisecond)
+
+	// Set continuous mode (write 0x06 to CNTL2=0x31)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x31) // CNTL2
+	mpu.i2cWrite(0x16, 0x06)                 // I2C_SLV4_DO = 0x06 (50 Hz continuous)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
+	time.Sleep(100 * time.Millisecond)
+	log.Println("  ✓ AK09916 set to continuous mode (50 Hz)")
+
+	// Step 6: Configure Slave 0 for continuous mag data read
+	log.Println("  Configuring Slave 0 for continuous reads...")
+	mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, 0x80|AK09916_I2C_ADDR) // Read from 0x0C
+	mpu.i2cWrite(ICMREG_I2C_SLV0_REG, 0x10)                    // ST1 register
+	mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, 0x80|9)                 // Enable, 9 bytes
+	log.Println("  ✓ Slave 0 configured for 9-byte reads")
+
+	// Set magnetometer scale
+	mpu.mpuCalData.M01 = scaleMagAK09916
+	mpu.mpuCalData.M02 = scaleMagAK09916
+	mpu.mpuCalData.M03 = scaleMagAK09916
+
+	mpu.setRegBank(0)
+	log.Println("✅ I2C Master initialization complete!")
 	return nil
 }
