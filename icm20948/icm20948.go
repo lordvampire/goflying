@@ -310,10 +310,25 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		}
 
 		// NOW enable I2C master mode (after all configuration is done!)
+		// FIRST: Read current USER_CTRL value to see if anything else is set
+		userCtrlBefore, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+		log.Printf("ICM20948: USER_CTRL before I2C Master enable = 0x%02X\n", userCtrlBefore)
+
 		// Enable I2C Master but keep I2C Slave enabled (Stratux needs to talk to us!)
 		if err := mpu.i2cWrite(ICMREG_USER_CTRL, BIT_I2C_MST_EN); err != nil {
 			return nil, errors.New("Error enabling I2C master mode")
 		}
+		time.Sleep(10 * time.Millisecond)
+
+		// Verify it was actually set
+		userCtrlAfter, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+		log.Printf("ICM20948: USER_CTRL after write = 0x%02X (expect 0x20 = I2C_MST_EN)\n", userCtrlAfter)
+
+		if (userCtrlAfter & BIT_I2C_MST_EN) == 0 {
+			log.Println("ICM20948: ERROR! I2C_MST_EN bit was NOT set in USER_CTRL!")
+			log.Println("ICM20948: This means I2C Master will not function!")
+		}
+
 		log.Println("ICM20948: I2C master enabled (USER_CTRL=0x20)")
 
 		time.Sleep(100 * time.Millisecond) // Give magnetometer time to initialize
