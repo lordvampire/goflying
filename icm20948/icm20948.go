@@ -953,11 +953,16 @@ func (mpu *ICM20948) initI2CMaster() error {
 	wia1 := byte(0x00)
 	for i := 0; i < 50; i++ {
 		time.Sleep(10 * time.Millisecond)
+		mpu.setRegBank(3) // CRITICAL: Must be in Bank 3 to read I2C_MST_STATUS!
 		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
 		if (status & 0x40) != 0 { // SLV4_DONE
 			wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
 			log.Printf("  ✓ Slave 4 read WIA1=0x%02X after %dms", wia1, (i+1)*10)
 			break
+		}
+		// Log status at intervals for debugging
+		if i == 0 || i == 10 || i == 49 {
+			log.Printf("  Slave 4 WIA1 poll %d: status=0x%02X", i+1, status)
 		}
 	}
 
@@ -967,7 +972,10 @@ func (mpu *ICM20948) initI2CMaster() error {
 
 	// Step 5: Initialize AK09916 via Slave 4
 	log.Println("  Initializing AK09916...")
-	
+
+	// Ensure we're in Bank 3 for Slave 4 operations
+	mpu.setRegBank(3)
+
 	// Reset AK09916 (write 0x01 to CNTL3=0x32)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode
 	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x32)              // CNTL3
