@@ -172,6 +172,14 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 		log.Println(err)
 	}
 
+	// DEBUG: Verify Gyro/Accel config was written (Python writes 0x06 and 0x04)
+	mpu.setRegBank(2)
+	gyro_cfg, _ := mpu.i2cRead(0x01) // GYRO_CONFIG_1
+	accel_cfg, _ := mpu.i2cRead(0x14) // ACCEL_CONFIG
+	mpu.setRegBank(0)
+	log.Printf("ICM20948: Bank 2 readback: GYRO_CONFIG=0x%02X (expect 0x06), ACCEL_CONFIG=0x%02X (expect 0x04)",
+		gyro_cfg, accel_cfg)
+
 	// NOW Initialize I2C Master (AFTER Gyro/Accel config, like Python)
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing I2C Master for magnetometer (AFTER Gyro/Accel config)")
@@ -950,9 +958,23 @@ func (mpu *ICM20948) initI2CMaster() error {
 	// Step 4: Test Slave 4 communication with AK09916 WHO_AM_I
 	log.Println("  Testing Slave 4 communication...")
 	mpu.setRegBank(3)
+
+	// DEBUG: Read all Bank 3 registers before Slave 4 transaction
+	odr, _ := mpu.i2cRead(ICMREG_I2C_MST_ODR_CONFIG)
+	ctrl, _ := mpu.i2cRead(ICMREG_I2C_MST_CTRL)
+	status_before, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+	log.Printf("  Bank 3 before Slave 4: ODR=0x%02X, CTRL=0x%02X, STATUS=0x%02X", odr, ctrl, status_before)
+
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR) // Read from 0x0C
 	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)                   // WIA1
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)                  // Enable
+
+	// DEBUG: Readback what we just wrote
+	slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
+	slv4_reg, _ := mpu.i2cRead(ICMREG_I2C_SLV4_REG)
+	slv4_ctrl, _ := mpu.i2cRead(ICMREG_I2C_SLV4_CTRL)
+	log.Printf("  Slave 4 config: ADDR=0x%02X (expect 0x8C), REG=0x%02X (expect 0x00), CTRL=0x%02X (expect 0x80)",
+		slv4_addr, slv4_reg, slv4_ctrl)
 
 	// Poll for SLV4_DONE
 	wia1 := byte(0x00)
