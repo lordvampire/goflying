@@ -1083,10 +1083,15 @@ func (mpu *ICM20948) initI2CMaster() error {
 
 	log.Println("  [WRITE] I2C_SLV4_ADDR (0x13) = 0x8C (READ from 0x0C)")
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR)
+	time.Sleep(5 * time.Millisecond)
+
 	log.Println("  [WRITE] I2C_SLV4_REG  (0x14) = 0x00 (WIA1)")
 	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)
+	time.Sleep(5 * time.Millisecond)
+
 	log.Println("  [WRITE] I2C_SLV4_CTRL (0x15) = 0x80 (ENABLE)")
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
+	time.Sleep(20 * time.Millisecond) // Give I2C Master time to start transaction!
 
 	log.Println("")
 	log.Println("  [DUMP] Slave 4 config readback:")
