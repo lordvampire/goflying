@@ -73,8 +73,8 @@ const (
 	ICMREG_MOT_DETECT_CTRL    = 0x69
 	ICMREG_USER_CTRL          = 0x6A
 	ICMREG_LP_CONFIG          = 0x05 // Bank 0: Low Power Config
-	ICMREG_PWR_MGMT_1         = 0x06
-	ICMREG_PWR_MGMT_2         = 0x6C
+	ICMREG_PWR_MGMT_1         = 0x06 // Bank 0: Power Management 1
+	ICMREG_PWR_MGMT_2         = 0x07 // Bank 0: Power Management 2 (was 0x6C - WRONG!)
 	ICMREG_BANK_SEL           = 0x7F // New use.
 	ICMREG_MEM_START_ADDR     = 0x6E
 	ICMREG_MEM_R_W            = 0x6F

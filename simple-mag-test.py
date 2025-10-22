@@ -107,7 +107,14 @@ class ICM20948:
         self.write_reg(INT_PIN_CFG, 0x00)
         time.sleep(0.01)
 
-        print("Step 2: Disable I2C_MST_CYCLE (enable continuous mode)")
+        print("Step 2: Reset I2C Master and SRAM (like PX4 does)")
+        # Reset I2C Master and SRAM first, then enable I2C Master
+        # BIT_I2C_MST_RST = 0x02, BIT_SRAM_RST = 0x04
+        self.write_reg(USER_CTRL, 0x02 | 0x04)  # Reset both
+        time.sleep(0.1)
+        print("  ✓ I2C Master and SRAM reset")
+
+        print("Step 3: Disable I2C_MST_CYCLE (enable continuous mode)")
         lp_config = self.read_reg(LP_CONFIG)
         print(f"  LP_CONFIG = 0x{lp_config:02X}")
         if lp_config & 0x40:
@@ -117,15 +124,15 @@ class ICM20948:
         # Bank 3: Configure I2C Master
         self.set_bank(3)
 
-        print("Step 3: Set I2C Master ODR to 200 Hz")
+        print("Step 4: Set I2C Master ODR to 200 Hz")
         self.write_reg(I2C_MST_ODR_CONFIG, 0x04)
 
-        print("Step 4: Set I2C Master clock to 400 kHz with STOP between reads")
+        print("Step 5: Set I2C Master clock to 400 kHz with STOP between reads")
         self.write_reg(I2C_MST_CTRL, 0x07 | BIT_I2C_MST_P_NSR)
 
         # Bank 0: Enable I2C Master
         self.set_bank(0)
-        print("Step 5: Enable I2C Master mode")
+        print("Step 6: Enable I2C Master mode (after reset and config)")
         self.write_reg(USER_CTRL, BIT_I2C_MST_EN)
         time.sleep(0.1)
 

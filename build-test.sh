@@ -35,7 +35,7 @@ RUN_AFTER="${2:-}"
 
 # Build for ARM (Raspberry Pi)
 echo -e "${YELLOW}Building for ARM/Raspberry Pi...${NC}"
-GOOS=linux GOARCH=arm GOARM=7 go build -o test-magnetometer-arm test-magnetometer.go
+GOOS=linux GOARCH=arm GOARM=7 /root/go/bin/go build -o test-magnetometer-arm test-magnetometer.go
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Build failed!${NC}"

@@ -85,6 +85,15 @@ fi
 echo -e "${YELLOW}Updated go.mod replace:${NC}"
 grep "lordvampire/goflying" go.mod
 
+# Copy patched sensors.go (fixes ICM-20948 Bank 0 detection)
+if [ -f /home/pi/sensors.go ]; then
+    echo -e "${YELLOW}Copying patched sensors.go...${NC}"
+    cp /home/pi/sensors.go /root/stratux/main/sensors.go
+    echo -e "${GREEN}✓ sensors.go patched${NC}"
+else
+    echo -e "${RED}✗ Warning: /home/pi/sensors.go not found - using original${NC}"
+fi
+
 # Clean build
 echo -e "${YELLOW}Cleaning previous build...${NC}"
 make clean
