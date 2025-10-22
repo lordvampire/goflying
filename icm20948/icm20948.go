@@ -1079,24 +1079,24 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Println("========================================")
 	log.Println("STEP 7: Testing Slave 4 Communication")
 	log.Println("========================================")
+
+	// ═══════════════════════════════════════════════════════════════════
+	// CRITICAL FIX: Match Python's exact bank-switching strategy
+	// Python calls set_bank(3) ONCE and stays there
+	// ═══════════════════════════════════════════════════════════════════
 	mpu.setRegBank(3)
 
-	// CRITICAL: Ensure Bank 3 before EACH write (in case i2cRead/i2cWrite changes it)
+	// Write Slave 4 registers WITHOUT redundant bank switches
 	log.Println("  [WRITE] I2C_SLV4_ADDR (0x13) = 0x8C (READ from 0x0C)")
-	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR)
-	time.Sleep(5 * time.Millisecond)
 
 	log.Println("  [WRITE] I2C_SLV4_REG  (0x14) = 0x00 (WIA1)")
-	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)
-	time.Sleep(5 * time.Millisecond)
 
 	log.Println("  [WRITE] I2C_SLV4_CTRL (0x15) = 0x80 (ENABLE)")
-	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
-	time.Sleep(20 * time.Millisecond) // Give I2C Master time to start transaction!
 
+	// Readback immediately (still in Bank 3)
 	log.Println("")
 	log.Println("  [DUMP] Slave 4 config readback:")
 	slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
@@ -1106,14 +1106,14 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Printf("    I2C_SLV4_REG  = 0x%02X (expect 0x00)", slv4_reg)
 	log.Printf("    I2C_SLV4_CTRL = 0x%02X (expect 0x80)", slv4_ctrl)
 
-	// Poll for SLV4_DONE
+	// Poll for SLV4_DONE (still in Bank 3, NO redundant setRegBank calls)
 	log.Println("")
 	log.Println("  [POLL] Waiting for SLV4_DONE bit (0x40 in I2C_MST_STATUS)...")
 	wia1 := byte(0x00)
 	success := false
 	for i := 0; i < 50; i++ {
 		time.Sleep(10 * time.Millisecond)
-		mpu.setRegBank(3) // CRITICAL: Must be in Bank 3!
+		// Stay in Bank 3 - no redundant bank switching!
 		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
 
 		// Decode status bits for logging
@@ -1183,10 +1183,10 @@ func (mpu *ICM20948) initI2CMaster() error {
 	mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, 0x80|9)                 // Enable, 9 bytes
 	log.Println("  ✓ Slave 0 configured for 9-byte reads")
 
-	// Set magnetometer scale
-	mpu.mpuCalData.M01 = scaleMagAK09916
-	mpu.mpuCalData.M02 = scaleMagAK09916
-	mpu.mpuCalData.M03 = scaleMagAK09916
+	// Set magnetometer hardware calibration scale (AK09916 uses ±4912 µT range)
+	mpu.mcal1 = scaleMagAK09916
+	mpu.mcal2 = scaleMagAK09916
+	mpu.mcal3 = scaleMagAK09916
 
 	mpu.setRegBank(0)
 	log.Println("✅ I2C Master initialization complete!")
