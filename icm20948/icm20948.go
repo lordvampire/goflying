@@ -163,22 +163,40 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	// ============================================================================
 	log.Println("ICM20948: Configuring Gyro/Accel sensitivity (before I2C Master)")
 
-	// Set Gyro and Accel sensitivities (minimal config, like Python)
-	if err := mpu.SetGyroSensitivity(sensitivityGyro); err != nil {
-		log.Println(err)
-	}
-
-	if err := mpu.SetAccelSensitivity(sensitivityAccel); err != nil {
-		log.Println(err)
-	}
-
-	// DEBUG: Verify Gyro/Accel config was written (Python writes 0x06 and 0x04)
+	// CRITICAL FIX: Write Bank 2 registers DIRECTLY like Python does!
+	// Python writes: GYRO_CONFIG_1 = 0x06, ACCEL_CONFIG = 0x04
+	// The SetGyroSensitivity/SetAccelSensitivity functions don't work correctly!
 	mpu.setRegBank(2)
-	gyro_cfg, _ := mpu.i2cRead(0x01) // GYRO_CONFIG_1
-	accel_cfg, _ := mpu.i2cRead(0x14) // ACCEL_CONFIG
+
+	// Write GYRO_CONFIG_1 = 0x06 (±1000 dps, exactly as Python does)
+	if err := mpu.i2cWrite(0x01, 0x06); err != nil {
+		log.Printf("ERROR writing GYRO_CONFIG_1: %v", err)
+	} else {
+		// Set scale for ±1000 dps
+		mpu.scaleGyro = 1000.0 / 32768.0
+	}
+
+	// Write ACCEL_CONFIG = 0x04 (±8g, exactly as Python does)
+	if err := mpu.i2cWrite(0x14, 0x04); err != nil {
+		log.Printf("ERROR writing ACCEL_CONFIG: %v", err)
+	} else {
+		// Set scale for ±8g
+		mpu.scaleAccel = 8.0 / 32768.0
+	}
+
+	time.Sleep(10 * time.Millisecond) // Give it time to settle
+
+	// Verify with readback
+	gyro_cfg, _ := mpu.i2cRead(0x01)
+	accel_cfg, _ := mpu.i2cRead(0x14)
 	mpu.setRegBank(0)
+
 	log.Printf("ICM20948: Bank 2 readback: GYRO_CONFIG=0x%02X (expect 0x06), ACCEL_CONFIG=0x%02X (expect 0x04)",
 		gyro_cfg, accel_cfg)
+
+	if gyro_cfg != 0x06 || accel_cfg != 0x04 {
+		log.Printf("WARNING: Bank 2 registers not correct! This will prevent I2C Master from working!")
+	}
 
 	// NOW Initialize I2C Master (AFTER Gyro/Accel config, like Python)
 	if mpu.enableMag {
