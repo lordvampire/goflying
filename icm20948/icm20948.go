@@ -1081,12 +1081,21 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Println("========================================")
 
 	// ═══════════════════════════════════════════════════════════════════
-	// CRITICAL FIX: Match Python's exact bank-switching strategy
-	// Python calls set_bank(3) ONCE and stays there
+	// CRITICAL TEST: Re-enable I2C Master IMMEDIATELY before Slave 4 writes
+	// Theory: I2C Master might only trigger on fresh USER_CTRL write
 	// ═══════════════════════════════════════════════════════════════════
+	log.Println("  [EXPERIMENTAL] Re-enabling I2C Master immediately before Slave 4 transaction...")
+	mpu.setRegBank(0)
+	mpu.i2cWrite(ICMREG_USER_CTRL, 0x20)  // Re-write USER_CTRL
+	time.Sleep(10 * time.Millisecond)      // Short stabilization delay
+
+	// Verify USER_CTRL is still set
+	userCtrlCheck, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+	log.Printf("  [CHECK] USER_CTRL after re-write = 0x%02X (expect 0x20)", userCtrlCheck)
+
+	// Now immediately configure and trigger Slave 4
 	mpu.setRegBank(3)
 
-	// Write Slave 4 registers WITHOUT redundant bank switches
 	log.Println("  [WRITE] I2C_SLV4_ADDR (0x13) = 0x8C (READ from 0x0C)")
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR)
 
@@ -1096,24 +1105,20 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Println("  [WRITE] I2C_SLV4_CTRL (0x15) = 0x80 (ENABLE)")
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
 
-	// Readback immediately (still in Bank 3)
-	log.Println("")
-	log.Println("  [DUMP] Slave 4 config readback:")
-	slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
-	slv4_reg, _ := mpu.i2cRead(ICMREG_I2C_SLV4_REG)
-	slv4_ctrl, _ := mpu.i2cRead(ICMREG_I2C_SLV4_CTRL)
-	log.Printf("    I2C_SLV4_ADDR = 0x%02X (expect 0x8C)", slv4_addr)
-	log.Printf("    I2C_SLV4_REG  = 0x%02X (expect 0x00)", slv4_reg)
-	log.Printf("    I2C_SLV4_CTRL = 0x%02X (expect 0x80)", slv4_ctrl)
+	// ═══════════════════════════════════════════════════════════════════
+	// CRITICAL CHANGE: NO readbacks between trigger and poll!
+	// Theory: Readbacks might interfere with autonomous I2C Master transaction
+	// ═══════════════════════════════════════════════════════════════════
+	log.Println("  [WAIT] Giving I2C Master 50ms to complete transaction (NO readbacks)...")
+	time.Sleep(50 * time.Millisecond)  // Give I2C Master time WITHOUT interference
 
-	// Poll for SLV4_DONE (still in Bank 3, NO redundant setRegBank calls)
+	// NOW poll for completion
 	log.Println("")
 	log.Println("  [POLL] Waiting for SLV4_DONE bit (0x40 in I2C_MST_STATUS)...")
 	wia1 := byte(0x00)
 	success := false
 	for i := 0; i < 50; i++ {
 		time.Sleep(10 * time.Millisecond)
-		// Stay in Bank 3 - no redundant bank switching!
 		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
 
 		// Decode status bits for logging
@@ -1148,7 +1153,21 @@ func (mpu *ICM20948) initI2CMaster() error {
 	if !success {
 		log.Println("")
 		log.Println("  [FAILED] SLV4_DONE never set!")
+		log.Println("  [DEBUG] Checking if USER_CTRL is still enabled...")
+		mpu.setRegBank(0)
+		userCtrlFailed, _ := mpu.i2cRead(ICMREG_USER_CTRL)
+		log.Printf("    USER_CTRL = 0x%02X (I2C_MST_EN=%v)", userCtrlFailed, (userCtrlFailed&0x20) != 0)
+		mpu.setRegBank(3)
 		mpu.dumpBank3Regs()
+	} else {
+		// Success! Dump config for comparison
+		log.Println("  [DUMP] Slave 4 config after success:")
+		slv4_addr, _ := mpu.i2cRead(ICMREG_I2C_SLV4_ADDR)
+		slv4_reg, _ := mpu.i2cRead(ICMREG_I2C_SLV4_REG)
+		slv4_ctrl, _ := mpu.i2cRead(ICMREG_I2C_SLV4_CTRL)
+		log.Printf("    I2C_SLV4_ADDR = 0x%02X", slv4_addr)
+		log.Printf("    I2C_SLV4_REG  = 0x%02X", slv4_reg)
+		log.Printf("    I2C_SLV4_CTRL = 0x%02X", slv4_ctrl)
 	}
 
 	if wia1 != 0x48 {
