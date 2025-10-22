@@ -1081,15 +1081,19 @@ func (mpu *ICM20948) initI2CMaster() error {
 	log.Println("========================================")
 	mpu.setRegBank(3)
 
+	// CRITICAL: Ensure Bank 3 before EACH write (in case i2cRead/i2cWrite changes it)
 	log.Println("  [WRITE] I2C_SLV4_ADDR (0x13) = 0x8C (READ from 0x0C)")
+	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, 0x80|AK09916_I2C_ADDR)
 	time.Sleep(5 * time.Millisecond)
 
 	log.Println("  [WRITE] I2C_SLV4_REG  (0x14) = 0x00 (WIA1)")
+	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x00)
 	time.Sleep(5 * time.Millisecond)
 
 	log.Println("  [WRITE] I2C_SLV4_CTRL (0x15) = 0x80 (ENABLE)")
+	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
 	time.Sleep(20 * time.Millisecond) // Give I2C Master time to start transaction!
 
