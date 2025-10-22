@@ -198,7 +198,19 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 	// Set up magnetometer (AK09916)
 	if mpu.enableMag {
 		log.Println("ICM20948: Initializing AK09916 magnetometer...")
-		log.Println("ICM20948: PWR_MGMT_2 already set to 0x00 during initialization")
+
+		// CRITICAL: Re-ensure PWR_MGMT_2 = 0x00 right before I2C Master init
+		// Something in the sensor config might have changed it
+		if err := mpu.setRegBank(0); err != nil {
+			return nil, errors.New("Error setting register bank 0 for PWR_MGMT_2 re-check")
+		}
+		pwrMgmt2, _ := mpu.i2cRead(ICMREG_PWR_MGMT_2)
+		log.Printf("ICM20948: PWR_MGMT_2 readback before I2C Master init = 0x%02X\n", pwrMgmt2)
+		if pwrMgmt2 != 0x00 {
+			log.Printf("ICM20948: WARNING! PWR_MGMT_2 was changed to 0x%02X, resetting to 0x00\n", pwrMgmt2)
+			mpu.i2cWrite(ICMREG_PWR_MGMT_2, 0x00)
+			time.Sleep(50 * time.Millisecond)
+		}
 
 		// CRITICAL: Disable I2C bypass mode FIRST (before any I2C master config)
 		// This is essential - bypass mode routes aux I2C to external pins, preventing I2C master from working
@@ -328,12 +340,16 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			done := false
 			for i := 0; i < 50; i++ { // 500ms timeout
 				time.Sleep(10 * time.Millisecond)
+				mpu.setRegBank(3) // Ensure we're in Bank 3 for status read
 				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
 				if (status & 0x40) != 0 { // SLV4_DONE bit
 					wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
 					log.Printf("ICM20948: Slave 4 read WIA1 completed after %dms\n", (i+1)*10)
 					done = true
 					break
+				}
+				if i == 0 || i == 10 || i == 49 {
+					log.Printf("ICM20948: Slave 4 WIA1 poll %d: status=0x%02X\n", i+1, status)
 				}
 			}
 
@@ -342,6 +358,7 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			}
 
 			// Read WIA2 (0x01)
+			mpu.setRegBank(3)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, BIT_I2C_READ|AK09916_I2C_ADDR)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_WIA2)
 			mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, BIT_SLAVE_EN)
@@ -350,12 +367,16 @@ func NewICM20948(i2cbus *embd.I2CBus, sensitivityGyro, sensitivityAccel, sampleR
 			done = false
 			for i := 0; i < 50; i++ {
 				time.Sleep(10 * time.Millisecond)
+				mpu.setRegBank(3)
 				status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
 				if (status & 0x40) != 0 {
 					wia2, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
 					log.Printf("ICM20948: Slave 4 read WIA2 completed after %dms\n", (i+1)*10)
 					done = true
 					break
+				}
+				if i == 0 || i == 10 || i == 49 {
+					log.Printf("ICM20948: Slave 4 WIA2 poll %d: status=0x%02X\n", i+1, status)
 				}
 			}
 
