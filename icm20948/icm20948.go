@@ -1185,24 +1185,47 @@ func (mpu *ICM20948) initI2CMaster() error {
 
 	// Reset AK09916 (write 0x01 to CNTL3=0x32)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR) // Write mode
-	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x32)              // CNTL3
-	mpu.i2cWrite(0x16, 0x01)                              // I2C_SLV4_DO = 0x01 (SRST)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL3)     // CNTL3
+	mpu.i2cWrite(ICMREG_I2C_SLV4_DO, 0x01)               // SRST (soft reset)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)             // Enable
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
-	// Set continuous mode (write 0x06 to CNTL2=0x31)
+	// Wait for transaction complete
+	for i := 0; i < 10; i++ {
+		mpu.setRegBank(3)
+		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+		if (status & 0x40) != 0 { // SLV4_DONE
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Set continuous mode 4 (write 0x08 to CNTL2=0x31) - 100Hz like periph.io test
+	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_ADDR, AK09916_I2C_ADDR)
-	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, 0x31) // CNTL2
-	mpu.i2cWrite(0x16, 0x06)                 // I2C_SLV4_DO = 0x06 (50 Hz continuous)
+	mpu.i2cWrite(ICMREG_I2C_SLV4_REG, AK09916_CNTL2)     // CNTL2
+	mpu.i2cWrite(ICMREG_I2C_SLV4_DO, 0x08)               // Continuous mode 4 (100Hz)
 	mpu.i2cWrite(ICMREG_I2C_SLV4_CTRL, 0x80)
-	time.Sleep(100 * time.Millisecond)
-	log.Println("  ✓ AK09916 set to continuous mode (50 Hz)")
+	time.Sleep(10 * time.Millisecond)
 
-	// Step 6: Configure Slave 0 for continuous mag data read
+	// Wait for transaction complete
+	for i := 0; i < 10; i++ {
+		mpu.setRegBank(3)
+		status, _ := mpu.i2cRead(ICMREG_I2C_MST_STATUS)
+		if (status & 0x40) != 0 { // SLV4_DONE
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+	log.Println("  ✓ AK09916 set to continuous mode 4 (100 Hz)")
+
+	// Step 6: Configure Slave 0 for continuous mag data read (9 bytes: ST1 + 6 mag + ST2)
 	log.Println("  Configuring Slave 0 for continuous reads...")
+	mpu.setRegBank(3)
 	mpu.i2cWrite(ICMREG_I2C_SLV0_ADDR, 0x80|AK09916_I2C_ADDR) // Read from 0x0C
-	mpu.i2cWrite(ICMREG_I2C_SLV0_REG, 0x10)                    // ST1 register
-	mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, 0x80|9)                 // Enable, 9 bytes
+	mpu.i2cWrite(ICMREG_I2C_SLV0_REG, AK09916_ST1)             // ST1 register (0x10)
+	mpu.i2cWrite(ICMREG_I2C_SLV0_CTRL, 0x89)                   // Enable + 9 bytes
+	time.Sleep(100 * time.Millisecond)                         // Let first read complete
 	log.Println("  ✓ Slave 0 configured for 9-byte reads")
 
 	// Set magnetometer hardware calibration scale (AK09916 uses ±4912 µT range)
