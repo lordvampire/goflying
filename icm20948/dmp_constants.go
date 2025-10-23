@@ -134,7 +134,7 @@ const (
 	// Reg bank 3.
 	ICMREG_I2C_MST_ODR_CONFIG = 0x00 // I2C Master ODR Configuration (Bank 3)
 	ICMREG_I2C_MST_CTRL       = 0x01 // I2C Master Control (Bank 3)
-	ICMREG_I2C_MST_STATUS     = 0x17 // I2C Master Status (Bank 3) - Same register as I2C_SLV4_DI
+	ICMREG_I2C_MST_STATUS     = 0x17 // I2C Master Status (Bank 3) - CRITICAL: Same register as I2C_SLV4_DI!
 	ICMREG_I2C_SLV0_ADDR      = 0x03
 	ICMREG_I2C_SLV0_REG  = 0x04
 	ICMREG_I2C_SLV0_CTRL = 0x05
@@ -144,8 +144,8 @@ const (
 	ICMREG_I2C_SLV4_ADDR = 0x13 // Bank 3
 	ICMREG_I2C_SLV4_REG  = 0x14 // Bank 3
 	ICMREG_I2C_SLV4_CTRL = 0x15 // Bank 3
-	ICMREG_I2C_SLV4_DO   = 0x16 // Bank 3
-	ICMREG_I2C_SLV4_DI   = 0x17 // Bank 3
+	ICMREG_I2C_SLV4_DO   = 0x16 // Bank 3 - Data Out
+	ICMREG_I2C_SLV4_DI   = 0x17 // Bank 3 - Data In (CRITICAL: Shares register 0x17 with I2C_MST_STATUS!)
 
 	/* ---- AK8963 Reg In MPU9250 ----------------------------------------------- */
 	AK8963_I2C_ADDR        = 0x0C //0x18

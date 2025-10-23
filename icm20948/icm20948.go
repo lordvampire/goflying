@@ -1016,10 +1016,13 @@ func (mpu *ICM20948) dumpBank3Regs() {
 }
 
 // initI2CMaster initializes the I2C Master for magnetometer communication
-// RADICALLY SIMPLIFIED based on working Python test
-// This matches the exact sequence that Python uses and works!
+// BREAKTHROUGH: After extensive debugging with periph.io test, confirmed working!
+// KEY FINDINGS:
+//   1. Register 0x17 in Bank 3 serves DUAL PURPOSE: I2C_MST_STATUS (read) and I2C_SLV4_DI (read after transaction)
+//   2. NO I2C bypass mode needed - Python reference implementation keeps bypass DISABLED
+//   3. Sequence: Disable Bypass → Configure I2C Master → Enable I2C Master → Use Slave 4 for transactions
 func (mpu *ICM20948) initI2CMaster() error {
-	log.Println("ICM20948: Starting simplified I2C Master init (Python-style)")
+	log.Println("ICM20948: Starting I2C Master initialization for AK09916 magnetometer")
 
 	// Ensure Bank 0
 	mpu.setRegBank(0)
