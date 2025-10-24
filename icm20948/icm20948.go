@@ -107,6 +107,7 @@ type ICM20948 struct {
 	enableMag             bool
 	mpuCalData
 	mcal1, mcal2, mcal3 float64         // Hardware magnetometer calibration values, uT
+	magReadCount        uint64          // Total magnetometer reads (for logging control)
 	C                   <-chan *MPUData // Current instantaneous sensor values
 	CAvg                <-chan *MPUData // Average sensor values (since CAvg last read)
 	CBuf                <-chan *MPUData // Buffer of instantaneous sensor values
@@ -460,10 +461,11 @@ func (mpu *ICM20948) readSensors() {
 				avm2 += int32(m2)
 				avm3 += int32(m3)
 				nm++
+				mpu.magReadCount++
 
-				// Log first successful read and every 100th read
-				if nm == 1 || int(nm)%100 == 0 {
-					log.Printf("ICM20948: Magnetometer read #%d: M1=%d, M2=%d, M3=%d (ST1=0x%02X, ST2=0x%02X)\n", int(nm), m1, m2, m3, st1, st2)
+				// Log first successful read and every 1000th read to reduce log spam
+				if mpu.magReadCount == 1 || mpu.magReadCount%1000 == 0 {
+					log.Printf("ICM20948: Magnetometer read #%d: M1=%d, M2=%d, M3=%d (ST1=0x%02X, ST2=0x%02X)\n", mpu.magReadCount, m1, m2, m3, st1, st2)
 				}
 			}
 		case cC <- curdata: // Send the latest values
