@@ -1144,6 +1144,8 @@ func (mpu *ICM20948) initI2CMaster() error {
 		}
 
 		if (status & 0x40) != 0 { // SLV4_DONE
+			// CRITICAL FIX: Wait before reading SLV4_DI (register 0x17 shared with I2C_MST_STATUS)
+			time.Sleep(5 * time.Millisecond)
 			wia1, _ = mpu.i2cRead(ICMREG_I2C_SLV4_DI)
 			log.Println("")
 			log.Printf("  [SUCCESS] SLV4_DONE after %dms", (i+1)*10)

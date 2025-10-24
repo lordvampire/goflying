@@ -71,7 +71,7 @@ const (
 	ICMREG_I2C_MST_DELAY_CTRL = 0x67
 	ICMREG_SIGNAL_PATH_RESET  = 0x68
 	ICMREG_MOT_DETECT_CTRL    = 0x69
-	ICMREG_USER_CTRL          = 0x6A
+	ICMREG_USER_CTRL          = 0x03 // Bank 0: CRITICAL FIX! Was 0x6A (MPU-9250), must be 0x03 (ICM-20948)
 	ICMREG_LP_CONFIG          = 0x05 // Bank 0: Low Power Config
 	ICMREG_PWR_MGMT_1         = 0x06 // Bank 0: Power Management 1
 	ICMREG_PWR_MGMT_2         = 0x07 // Bank 0: Power Management 2 (was 0x6C - WRONG!)
